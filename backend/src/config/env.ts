@@ -29,6 +29,11 @@ const envSchema = z.object({
   DATABASE_URL: postgresUrlSchema,
   UPSTASH_REDIS_REST_URL: z.string().url(),
   UPSTASH_REDIS_REST_TOKEN: z.string().min(1),
+  SUPABASE_URL: z.string().url(),
+  SUPABASE_ANON_KEY: z.string().min(1),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
+  /** Used in auth redirect URLs from Supabase emails (must be allowed in Supabase Auth URL config). */
+  PUBLIC_APP_URL: z.string().url(),
 });
 
 export type Env = z.infer<typeof envSchema>;
