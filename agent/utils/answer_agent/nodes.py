@@ -1,9 +1,10 @@
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
 
-from .prompt import IMAGE_PROMPT, TEXT_PROMPT_PREFIX , JSON_EXTRACTION_PROMPT
+from .prompt import IMAGE_PROMPT, TEXT_PROMPT_PREFIX , JSON_EXTRACTION_PROMPT ,system_prompt
 from .state import AgentState
 from dotenv import load_dotenv
+from tools import tools
 load_dotenv()
 llm = ChatOpenAI(model="gpt-4o", temperature=0)
 
@@ -77,3 +78,16 @@ def process_with_agent(state: AgentState):
 
     # 6. Return the beautifully structured JSON string
     return {"final_output": final_json_string}
+
+
+def save_with_agent(state: AgentState):
+	content = state["final_output"]
+
+	message = HumanMessage(content=f"{system_prompt}{content}")
+
+	response = llm.invoke([message])
+	return {"final_output": response.content}
+
+from langgraph.prebuilt import ToolNode
+
+tool_node = ToolNode(tools)

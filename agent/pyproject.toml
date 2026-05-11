@@ -14,8 +14,10 @@ dependencies = [
     "langgraph>=0.2.34",
     "openai>=1.40.0",
     "pdf2image>=1.17.0",
+    "psycopg2-binary>=2.9.12",
     "pypdf>=6.11.0",
     "python-dotenv>=1.0.1",
     "python-multipart>=0.0.28",
+    "supabase>=2.30.0",
     "uvicorn>=0.46.0",
 ]

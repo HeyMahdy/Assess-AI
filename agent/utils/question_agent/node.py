@@ -3,9 +3,9 @@ from typing import TypedDict
 from langgraph.graph import StateGraph, START, END
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
-from .prompts import RUBRIC_PROMPT,TEACHER_SOLVE_PROMPT
+from .prompts import RUBRIC_PROMPT,TEACHER_SOLVE_PROMPT ,system_prompt
 from .state import AgentState
-
+from .tools import tools
 from dotenv import load_dotenv
 load_dotenv()
 llm = ChatOpenAI(model="gpt-4o", temperature=0)
@@ -47,3 +47,17 @@ def dynamic_extract_node(state: AgentState):
     response = json_llm.invoke(messages)
     
     return {"final_output": response.content}
+
+
+def save_with_agent(state: AgentState):
+	content = state["final_output"]
+
+	message = HumanMessage(content=f"{system_prompt}{content}")
+
+	response = llm.invoke([message])
+	return {"final_output": response.content}
+
+
+from langgraph.prebuilt import ToolNode
+
+tool_node = ToolNode(tools)
