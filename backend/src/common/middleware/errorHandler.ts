@@ -1,4 +1,5 @@
 import type { ErrorRequestHandler } from 'express';
+import { HttpError } from '../HttpError.js';
 import { logger } from '../../lib/logger.js';
 
 function getHttpStatus(err: unknown): number {
@@ -24,8 +25,12 @@ function getErrorMessage(err: unknown, status: number): string {
 }
 
 export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
-  logger.error({ err }, 'unhandled error');
   const status = getHttpStatus(err);
+  if (err instanceof HttpError && status < 500) {
+    logger.warn({ status, message: err.message }, 'handled client error');
+  } else {
+    logger.error({ err }, 'unhandled error');
+  }
   const message = getErrorMessage(err, status);
   res.status(status).json({ message });
 };
