@@ -54,3 +54,8 @@ Thumbs.db
 .turbo/
 .cache/
 node_repl_history
+
+# Skills
+.agents/
+skills-lock.json
+
