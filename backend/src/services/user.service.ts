@@ -49,7 +49,7 @@ export async function getProfileByAccessToken(accessToken: string) {
   return toPublicProfile(data);
 }
 
-export async function updateMyProfile(accessToken: string, body: UpdateMyProfileBody) {
+export async function updateMyProfile(accessToken: string, userId: string, body: UpdateMyProfileBody) {
   const supabase = createUserScopedClient(accessToken);
   const patch: Record<string, unknown> = {};
   if (body.display_name !== undefined) {
@@ -62,6 +62,7 @@ export async function updateMyProfile(accessToken: string, body: UpdateMyProfile
   const { data, error } = await supabase
     .from('profiles')
     .update(patch)
+    .eq('id', userId)
     .select('id, display_name, avatar_url, role_id, roles(name)')
     .maybeSingle();
 
