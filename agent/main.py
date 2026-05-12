@@ -1,5 +1,6 @@
 import base64
 import io
+import traceback
 
 import pypdf
 import uvicorn
@@ -9,9 +10,11 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from api.service.Textract_service import parse_standard_file , textract_client
 from utils.answer_agent.graph import build_graph as build_answer_graph
 from utils.question_agent.graph import build_graph as build_question_graph
-
+from utils.reviewer_agent.graph import build_graph as grading_app
+from pydantic import BaseModel, Field
 app_graph = build_answer_graph()
 app_graph_01 = build_question_graph()
+app_graph_02=grading_app()
 
 load_dotenv()
 
@@ -24,7 +27,12 @@ load_dotenv()
 app = FastAPI(title="LangGraph PDF & Image Analyzer")
 
 @app.post("/answer")
-async def analyze_file_endpoint(file: UploadFile = File(...)):
+async def analyze_file_endpoint(
+    file: UploadFile = File(...),
+    teacher_id: str = Form(...),
+    student_id: str = Form(...),
+    assignment_id: int = Form(...),
+):
     """
     Endpoint that accepts a PDF or an Image, processes it, 
     runs it through LangGraph, and returns the LLM's analysis.
@@ -41,8 +49,11 @@ async def analyze_file_endpoint(file: UploadFile = File(...)):
             image_data_url = f"data:{content_type};base64,{encoded_image}"
             
             initial_state = {
-                "file_content": image_data_url, 
-                "file_type": "image"
+                "file_content": image_data_url,
+                "file_type": "image",
+                "teacher_id": teacher_id,
+                "student_id": student_id,
+                "assignment_id": assignment_id,
             }
 
         # --- HANDLE PDFs ---
@@ -57,8 +68,11 @@ async def analyze_file_endpoint(file: UploadFile = File(...)):
                 raise HTTPException(status_code=400, detail="Could not extract text from the PDF. It might be a scanned image without OCR.")
 
             initial_state = {
-                "file_content": extracted_text, 
-                "file_type": "pdf"
+                "file_content": extracted_text,
+                "file_type": "pdf",
+                "teacher_id": teacher_id,
+                "student_id": student_id,
+                "assignment_id": assignment_id,
             }
 
         # --- REJECT UNSUPPORTED FILES ---
@@ -76,7 +90,8 @@ async def analyze_file_endpoint(file: UploadFile = File(...)):
         }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"{e.__class__.__name__}: {e}")
     
 
 
@@ -87,9 +102,11 @@ async def analyze_file_endpoint(file: UploadFile = File(...)):
 # ==========================================
 @app.post("/question")
 async def process_answer_endpoint(
-    file: UploadFile = File(...), 
+    file: UploadFile = File(...),
     is_handwritten: bool = Form(...),
-    is_rubric:bool=Form(...)
+    is_rubric: bool = Form(...),
+    teacher_id: str = Form(...),
+    assignment_id: int = Form(...),
 ):
     """
     Processes a student's uploaded answer sheet.
@@ -102,6 +119,8 @@ async def process_answer_endpoint(
             # --- USE NORMAL LLM EXTRACTION FOR HANDWRITING ---
             initial_state = await parse_standard_file(contents, file.content_type)
             initial_state["document_type"] = "rubric" if is_rubric else "teacher_solve"
+            initial_state["teacher_id"] = teacher_id
+            initial_state["assignment_id"] = assignment_id
             result = app_graph_01.invoke(initial_state)
             
             return {
@@ -129,6 +148,8 @@ async def process_answer_endpoint(
             # Pass the Textract output to your LangGraph to structure it into JSON
             initial_state = {"file_content": extracted_text, "file_type": "text"}
             initial_state["document_type"] = "rubric" if is_rubric else "teacher_solve"
+            initial_state["teacher_id"] = teacher_id
+            initial_state["assignment_id"] = assignment_id
             result = app_graph_01.invoke(initial_state)
             
             return {
@@ -138,15 +159,44 @@ async def process_answer_endpoint(
             }
 
     except Exception as e:
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"{e.__class__.__name__}: {e}")
+
+
+
+
+
+
+
+class GradeRequest(BaseModel):
+    teacher_id: str
+    student_id: str
+    assignment_id: int
+
+@app.post("/api/grade")
+async def trigger_grading(request: GradeRequest):
+    try:
+        # Initial state to kick off the graph
+        initial_state = {
+            "teacher_id": request.teacher_id,
+            "student_id": request.student_id,
+            "assignment_id": request.assignment_id,
+            "all_results": [] # Initialize empty array
+        }
+        
+        # Invoke the graph synchronously (wait for all loops to finish)
+        final_state = app_graph_02.invoke(initial_state)
+        
+        # Return only the aggregated results as JSON
+        return {
+            "status": "success",
+            "student_id": request.student_id,
+            "assignment_id": request.assignment_id,
+            "results": final_state.get("all_results", [])
+        }
+        
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
-
-
-
-
-
-
 
 
 

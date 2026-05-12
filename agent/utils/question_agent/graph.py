@@ -6,7 +6,7 @@ from langgraph.graph import StateGraph, START, END
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 from .state import AgentState
-from .node import dynamic_extract_node , tool_node
+from .node import dynamic_extract_node , tool_node ,save_with_agent
 
 
 def should_continue(state: AgentState):
@@ -26,6 +26,7 @@ def build_graph():
     workflow = StateGraph(AgentState)
     workflow.add_node("extract_node", dynamic_extract_node)
     workflow.add_node("tool_node", tool_node)
+    workflow.add_node("save_agent", save_with_agent)
     workflow.add_edge(START, "extract_node")
     workflow.add_conditional_edges(
         "save_agent",

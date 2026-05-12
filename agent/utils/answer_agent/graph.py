@@ -8,13 +8,13 @@ def should_continue(state: AgentState):
     Evaluates the last message to decide the next step.
     Routes to 'tools' if the LLM wants to execute a tool, otherwise ends the workflow.
     """
-    last_message = state["messages"][-1]
-    
-    # Check if the LLM requested a tool execution
-    if hasattr(last_message, 'tool_calls') and last_message.tool_calls:
-        return "tools" # <--- FIXED: Changed from "continue" to "tools"
-    else:
-        return "END"
+    messages = state.get("messages")
+    if messages:
+        last_message = messages[-1]
+        # Check if the LLM requested a tool execution
+        if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+            return "tools"
+    return "END"
 
 def build_graph():
     workflow = StateGraph(AgentState)

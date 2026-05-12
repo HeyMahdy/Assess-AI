@@ -4,7 +4,7 @@ from langchain_core.messages import HumanMessage
 from .prompt import IMAGE_PROMPT, TEXT_PROMPT_PREFIX , JSON_EXTRACTION_PROMPT ,system_prompt
 from .state import AgentState
 from dotenv import load_dotenv
-from tools import tools
+from .tools import tools
 load_dotenv()
 llm = ChatOpenAI(model="gpt-4o", temperature=0)
 
@@ -83,7 +83,14 @@ def process_with_agent(state: AgentState):
 def save_with_agent(state: AgentState):
 	content = state["final_output"]
 
-	message = HumanMessage(content=f"{system_prompt}{content}")
+	message = HumanMessage(
+		content=system_prompt.format(
+			teacher_id=state["teacher_id"],
+			student_id=state["student_id"],
+			assignment_id=state["assignment_id"],
+		)
+		+ content
+	)
 
 	response = llm.invoke([message])
 	return {"final_output": response.content}

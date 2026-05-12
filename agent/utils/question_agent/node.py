@@ -50,12 +50,18 @@ def dynamic_extract_node(state: AgentState):
 
 
 def save_with_agent(state: AgentState):
-	content = state["final_output"]
+    content = state["final_output"]
 
-	message = HumanMessage(content=f"{system_prompt}{content}")
+    message = HumanMessage(
+        content=system_prompt.format(
+            teacher_id=state["teacher_id"],
+            assignment_id=state["assignment_id"],
+        )
+        + content
+    )
 
-	response = llm.invoke([message])
-	return {"final_output": response.content}
+    response = llm.invoke([message])
+    return {"final_output": response.content}
 
 
 from langgraph.prebuilt import ToolNode
