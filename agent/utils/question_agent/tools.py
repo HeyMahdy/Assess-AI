@@ -1,5 +1,5 @@
 import json
-from typing import Dict, Any
+from typing import Any
 from pydantic import BaseModel, Field
 from langchain_core.tools import tool
 from config.db import get_db_connection
@@ -26,8 +26,10 @@ def insert_question(teacher_id: str, assignment_id: int, question_label: str, qu
                 cur.execute(sql, (teacher_id, assignment_id, question_label, question_description))
                 new_id = cur.fetchone()['id']
                 conn.commit()
+        print(f"[insert_question] Inserted {question_label} (id={new_id})")
         return f"Successfully inserted question '{question_label}'. ID: {new_id}"
     except Exception as e:
+        print(f"[insert_question] Error: {e}")
         return f"Database error inserting question: {str(e)}"
 
 # ---------------------------------------------------------
@@ -37,10 +39,10 @@ class InsertRubricInput(BaseModel):
     teacher_id: str = Field(...)
     assignment_id: int = Field(...)
     question_label: str = Field(...)
-    rubric_description: Dict[str, Any] = Field(..., description="JSON object containing the rubric breakdown")
+    rubric_description: Any = Field(..., description="JSON object containing the rubric breakdown")
 
 @tool("insert_rubric", args_schema=InsertRubricInput)
-def insert_rubric(teacher_id: str, assignment_id: int, question_label: str, rubric_description: Dict[str, Any]) -> str:
+def insert_rubric(teacher_id: str, assignment_id: int, question_label: str, rubric_description: Any) -> str:
     """Saves the JSON grading rubric for a specific question."""
     sql = """
         INSERT INTO public.rubrics (teacher_id, assignment_id, question_label, rubric_description) 
@@ -52,8 +54,10 @@ def insert_rubric(teacher_id: str, assignment_id: int, question_label: str, rubr
                 cur.execute(sql, (teacher_id, assignment_id, question_label, json.dumps(rubric_description)))
                 new_id = cur.fetchone()['id']
                 conn.commit()
+        print(f"[insert_rubric] Inserted {question_label} (id={new_id})")
         return f"Successfully inserted rubric for '{question_label}'. ID: {new_id}"
     except Exception as e:
+        print(f"[insert_rubric] Error: {e}")
         return f"Database error inserting rubric: {str(e)}"
 
 

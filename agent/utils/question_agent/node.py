@@ -78,6 +78,33 @@ def save_with_agent(state: AgentState):
 
     # Use the LLM that actually has tools bound to it!
     response = agent_llm.invoke(messages_to_process)
+
+    if hasattr(response, "tool_calls"):
+        print(f"[save_with_agent] tool_calls={response.tool_calls}")
+
+        if state.get("document_type") == "rubric":
+            missing_rubric_args = any(
+                call.get("name") == "insert_rubric"
+                and "rubric_description" not in call.get("args", {})
+                for call in response.tool_calls
+            )
+            if missing_rubric_args:
+                try:
+                    extracted = json.loads(state["final_output"])
+                    for label, rubric in extracted.items():
+                        tools_by_name = {tool_item.name: tool_item for tool_item in tools}
+                        tools_by_name["insert_rubric"].invoke(
+                            {
+                                "teacher_id": state["teacher_id"],
+                                "assignment_id": state["assignment_id"],
+                                "question_label": label,
+                                "rubric_description": rubric,
+                            }
+                        )
+                    return {"messages": [HumanMessage(content="Rubrics inserted directly.")]}
+                except Exception as e:
+                    print(f"[save_with_agent] Rubric direct insert failed: {e}")
+                    return {"messages": [HumanMessage(content=f"Rubric insert failed: {e}")]}
     
     # CRITICAL FIX: Must return to the "messages" array so the router can read it
     return {"messages": [response]}

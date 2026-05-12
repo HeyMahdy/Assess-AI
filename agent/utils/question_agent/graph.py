@@ -15,8 +15,6 @@ from .node import dynamic_extract_node,tool_node,save_with_agent
 
 def should_continue(state: AgentState):
     """Evaluates the last message to decide the next step."""
-    last_message = state["messages"][-1]
-    
     messages = state.get("messages")
     if messages:
             last_message = messages[-1]

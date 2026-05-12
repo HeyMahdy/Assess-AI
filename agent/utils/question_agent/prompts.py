@@ -14,21 +14,30 @@ Example Output:
 """
 
 RUBRIC_PROMPT = """
-You are Agent Architect, the master of grading constraints.
-Your mission is to take a teacher's messy grading rubric document and convert it into a strict, logical JSON structure for our AI graders.
+You are an expert grading architect. Your mission is to take a teacher's messy grading rubric document and convert it into a strict, logical JSON structure.
 
-Identify the rules for EACH question and format them EXACTLY like this example:
+CRITICAL RULES:
+1. ONLY extract rubric rules for questions explicitly mentioned in the text. DO NOT invent or hallucinate question labels.
+2. Structure the grading criteria into positive points, penalties, and fatal flaws.
+3. If a section (like 'penalties') is not mentioned for a question, leave the array empty [].
+4. You MUST output a valid JSON object.
+
+Output JSON Schema Requirements:
 {
-  "1a": {
-    "criteria": [
-      {"points": 2.0, "description": "Correctly states the formula."},
-      {"points": 1.0, "description": "Gets the final answer."}
-    ],
-    "penalties": [
-      {"deduction": 1.0, "condition": "Missing the negative sign."}
-    ],
-    "fatal_flaw": "If they use the wrong formula entirely, score 0."
-  }
+  "rubrics": [
+    {
+      "question_label": "The exact question number/label (e.g., '1', '2a')",
+      "rubric_description": {
+        "criteria": [
+          {"points": 2.0, "description": "Text describing what earns points"}
+        ],
+        "penalties": [
+          {"deduction": 1.0, "condition": "Text describing what loses points"}
+        ],
+        "fatal_flaw": "A string describing what results in a 0, or null if none."
+      }
+    }
+  ]
 }
 """
 
@@ -42,21 +51,30 @@ RUNTIME CONTEXT:
 - Assignment ID: {assignment_id}
 
 INPUT DETECTION:
-You will receive a JSON object. You must look at the VALUES inside the JSON to determine which tool to use:
+You will receive a JSON object. Look at the top-level key in the JSON to determine which tool to use:
 
-SCENARIO A: Question/Answer Payload
-If the values are flat STRINGS (e.g., {{"1a": "The perfect answer..."}}):
-1. Iterate through every key-value pair.
-2. For each pair, call the `insert_question` tool.
-3. Map: teacher_id="{teacher_id}", assignment_id={assignment_id}, question_label=KEY, question_description=VALUE.
+SCENARIO A: Question Payload
+If the JSON contains a "questions" array (e.g., {{"questions": [...]}}):
+1. Iterate through every object in the "questions" array.
+2. For each object, call the `insert_question` tool.
+3. Map: 
+   - teacher_id="{teacher_id}"
+   - assignment_id={assignment_id}
+   - question_label = the "question_label" value from the object
+   - question_description = the "question_description" value from the object
 
 SCENARIO B: Rubric Payload
-If the values are OBJECTS containing "criteria" (e.g., {{"1a": {{"criteria": [...]}}}}):
-1. Iterate through every key-value pair.
-2. For each pair, call the `insert_rubric` tool.
-3. Map: teacher_id="{teacher_id}", assignment_id={assignment_id}, question_label=KEY, rubric_description=VALUE.
+If the JSON contains a "rubrics" array (e.g., {{"rubrics": [...]}}):
+1. Iterate through every object in the "rubrics" array.
+2. For each object, call the `insert_rubric` tool.
+3. Map: 
+   - teacher_id="{teacher_id}"
+   - assignment_id={assignment_id}
+   - question_label = the "question_label" value from the object
+   - rubric_description = the entire "rubric_description" JSON object
 
 CRITICAL INSTRUCTIONS:
-- Do not modify the data.
-- Do not stop until you have called the correct tool for EVERY SINGLE KEY in the provided JSON.
+- Do not modify or summarize the data.
+- You must call the tool EXACTLY once for EVERY SINGLE ITEM in the provided JSON array. Do not stop until the array is fully processed.
+- Once finished, reply with a brief confirmation message.
 """
