@@ -66,6 +66,62 @@ async def get_seed_data():
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"{e.__class__.__name__}: {e}")
 
+
+@app.get("/api/questions")
+async def get_questions():
+    teacher_id = "22222222-2222-2222-2222-222222222222"
+    assignment_id = 99
+
+    sql_questions = """
+        SELECT question_label, question_description
+        FROM public.questions
+        WHERE teacher_id = %s AND assignment_id = %s
+        ORDER BY question_label;
+    """
+
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql_questions, (teacher_id, assignment_id))
+                questions = cur.fetchall()
+
+        return {
+            "teacher_id": teacher_id,
+            "assignment_id": assignment_id,
+            "questions": questions,
+        }
+    except Exception as e:
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"{e.__class__.__name__}: {e}")
+
+
+@app.get("/api/rubrics")
+async def get_rubrics():
+    teacher_id = "22222222-2222-2222-2222-222222222222"
+    assignment_id = 99
+
+    sql_rubrics = """
+        SELECT question_label, rubric_description
+        FROM public.rubrics
+        WHERE teacher_id = %s AND assignment_id = %s
+        ORDER BY question_label;
+    """
+
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql_rubrics, (teacher_id, assignment_id))
+                rubrics = cur.fetchall()
+
+        return {
+            "teacher_id": teacher_id,
+            "assignment_id": assignment_id,
+            "rubrics": rubrics,
+        }
+    except Exception as e:
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"{e.__class__.__name__}: {e}")
+
 @app.post("/answer")
 async def analyze_file_endpoint(
     file: UploadFile = File(...),
