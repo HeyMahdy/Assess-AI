@@ -1,5 +1,7 @@
 from typing import TypedDict
-
+import operator
+from typing import TypedDict, Annotated, Sequence
+from langchain_core.messages import BaseMessage
 
 class AgentState(TypedDict):
 	file_content: str
@@ -8,3 +10,6 @@ class AgentState(TypedDict):
 	teacher_id: str
 	student_id: str
 	assignment_id: int
+
+	extracted_data: str
+	messages: Annotated[Sequence[BaseMessage], operator.add]

@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 
 from api.service.Textract_service import parse_standard_file , textract_client
+from config.db import get_db_connection
 from utils.answer_agent.graph import build_graph as build_answer_graph
 from utils.question_agent.graph import build_graph as build_question_graph
 from utils.reviewer_agent.graph import build_graph as grading_app
@@ -25,6 +26,45 @@ load_dotenv()
 # ==========================================
 
 app = FastAPI(title="LangGraph PDF & Image Analyzer")
+
+@app.get("/api/seed-data")
+async def get_seed_data():
+    teacher_id = "22222222-2222-2222-2222-222222222222"
+    student_id = "STU-999"
+    assignment_id = 99
+
+    sql_questions = """
+        SELECT question_label, question_description
+        FROM public.questions
+        WHERE teacher_id = %s AND assignment_id = %s
+        ORDER BY question_label;
+    """
+
+    sql_answers = """
+        SELECT question_label, answer
+        FROM public.student_answers
+        WHERE teacher_id = %s AND student_id = %s AND assignment_id = %s
+        ORDER BY question_label;
+    """
+
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql_questions, (teacher_id, assignment_id))
+                questions = cur.fetchall()
+                cur.execute(sql_answers, (teacher_id, student_id, assignment_id))
+                answers = cur.fetchall()
+
+        return {
+            "teacher_id": teacher_id,
+            "student_id": student_id,
+            "assignment_id": assignment_id,
+            "questions": questions,
+            "student_answers": answers,
+        }
+    except Exception as e:
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"{e.__class__.__name__}: {e}")
 
 @app.post("/answer")
 async def analyze_file_endpoint(
@@ -83,10 +123,14 @@ async def analyze_file_endpoint(
         result = app_graph.invoke(initial_state)
 
         # Return the output to the user
+        analysis = result.get("final_output")
+        if analysis is None:
+            analysis = result.get("extracted_data", result)
+
         return {
             "filename": file.filename,
             "type": initial_state["file_type"],
-            "analysis": result["final_output"]
+            "analysis": analysis,
         }
 
     except Exception as e:

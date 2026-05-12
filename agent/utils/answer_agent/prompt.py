@@ -1,6 +1,6 @@
-IMAGE_PROMPT = "Please analyze and describe this image in detail."
+IMAGE_PROMPT = "Please Extracts data from the image and structures it into JSON."
 TEXT_PROMPT_PREFIX = (
-	"Please analyze the following document text and summarize its contents:\n\n"
+	"Extracts data from the document and structures it into JSON:\n\n"
 )
 
 
@@ -18,6 +18,10 @@ INSTRUCTIONS:
 2. Extract the student's entire answer for that specific question.
 3. Output a SINGLE JSON object where the keys are clean, standardized question numbers (e.g., "1a", "1b", "2") and the values are the exact text of the student's answer.
 4. DO NOT output any conversational text, markdown formatting, or explanations outside of the JSON object.
+
+CRITICAL RULES:
+1. DO NOT invent, generate, or assume answers for questions that are not present in the text.
+2. If a valid question label is missing from the text, DO NOT include it in the JSON.
 
 Example Output:
 {

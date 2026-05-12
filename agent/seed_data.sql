@@ -1,2 +1,1 @@
--- A. Insert the Teacher Profile
-select * from public.assignments
+TRUNCATE TABLE public.student_answers;
