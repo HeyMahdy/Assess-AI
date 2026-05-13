@@ -72,9 +72,13 @@ def decision_agent_node(state: AgentState):
         # Combine the prompt rules with the JSON data from the analyze_node
         full_instruction = f"{prompt_text}\n\nDATA TO PROCESS:\n{state['extracted_data']}"
         messages_to_process = [HumanMessage(content=full_instruction)]
+        print("[Decision Agent] Input message (first pass):")
+        print(messages_to_process[0].content)
     else:
         # If it's looping back from a tool call, it just reads the existing conversation history
         messages_to_process = state["messages"]
+        print("[Decision Agent] Input messages (loop):")
+        print(messages_to_process)
 
     # INVOKE THE LLM WITH TOOLS BOUND
     # This is where it generates the tool_calls!

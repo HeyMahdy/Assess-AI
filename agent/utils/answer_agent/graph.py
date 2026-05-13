@@ -41,8 +41,7 @@ def build_graph():
         }
     )
     
-    # 4. The Loop Back (Crucial step!)
-    # After the tool runs, go BACK to the agent so it can see what happened!
-    workflow.add_edge("tool_node", "decision_agent")
+    # 4. End after one tool execution pass
+    workflow.add_edge("tool_node", END)
     
     return workflow.compile()

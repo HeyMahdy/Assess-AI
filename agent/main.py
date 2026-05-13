@@ -31,7 +31,7 @@ app = FastAPI(title="LangGraph PDF & Image Analyzer")
 async def get_seed_data():
     teacher_id = "22222222-2222-2222-2222-222222222222"
     student_id = "STU-999"
-    assignment_id = 99
+    assignment_id = 3
 
     sql_questions = """
         SELECT question_label, question_description
@@ -70,7 +70,7 @@ async def get_seed_data():
 @app.get("/api/questions")
 async def get_questions():
     teacher_id = "22222222-2222-2222-2222-222222222222"
-    assignment_id = 99
+    assignment_id = 3
 
     sql_questions = """
         SELECT question_label, question_description
@@ -98,7 +98,7 @@ async def get_questions():
 @app.get("/api/rubrics")
 async def get_rubrics():
     teacher_id = "22222222-2222-2222-2222-222222222222"
-    assignment_id = 99
+    assignment_id = 3
 
     sql_rubrics = """
         SELECT question_label, rubric_description

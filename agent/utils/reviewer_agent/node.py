@@ -49,13 +49,27 @@ def fetch_next_context_node(state: AssignmentState):
     print(f"\nSupervisor: Setting up context for Question {next_label}...")
     
     # Fetch the context for THIS specific label
+    print("[fetch_next_context_node] Fetching context with:")
+    print({
+        "teacher_id": state.get("teacher_id"),
+        "student_id": state.get("student_id"),
+        "assignment_id": state.get("assignment_id"),
+        "question_label": next_label,
+    })
+
     result_str = fetch_evaluation_context.invoke({
         "teacher_id": state['teacher_id'],
         "student_id": state['student_id'],
         "assignment_id": state['assignment_id'],
         "question_label": next_label
     })
+
+    print("[fetch_next_context_node] Raw tool output:")
+    print(result_str)
+
     data = json.loads(result_str)
+    print("[fetch_next_context_node] Parsed tool output:")
+    print(data)
     
     # Update the state with the new context AND the shortened queue
     return {
@@ -71,7 +85,7 @@ def fetch_next_context_node(state: AssignmentState):
 
 def grader_1_node(state: AssignmentState):
     """Executes the strict grading evaluation."""
-    print(f"  -> Grader 1 evaluating {state['question_label']}...")
+    print(f"  -> Grader 1 evaluating {state.get('current_label')}...")
     
     # Format the prompt with the state variables
     messages = grader_1_prompt.format_messages(
@@ -92,7 +106,7 @@ def grader_1_node(state: AssignmentState):
 
 def grader_2_node(state: AssignmentState):
     """Executes the lenient/creative grading evaluation."""
-    print(f"  -> Grader 2 evaluating {state['question_label']}...")
+    print(f"  -> Grader 2 evaluating {state.get('current_label')}...")
     
     messages = grader_2_prompt.format_messages(
         question_description=state["question_description"],
@@ -105,7 +119,7 @@ def grader_2_node(state: AssignmentState):
     return {
         "grader_2_result": {
             "score": result.score,
-            "label": AssignmentState["label"]
+            "label": state.get("current_label")
            
         }
     }
