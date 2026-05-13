@@ -62,49 +62,52 @@ def dynamic_extract_node(state: AgentState):
 def save_with_agent(state: AgentState):
     """Decides which tools to call based on the extracted JSON."""
     
-    # CRITICAL FIX: Check if we are looping. 
-    # If there are no messages yet, format the initial prompt.
+    print("\n" + "="*50)
+    print(f"[save_with_agent] 🚀 Entering node.")
+    print(f"[save_with_agent] 🔍 State -> teacher_id: {state.get('teacher_id')}, assignment_id: {state.get('assignment_id')}")
+    print(f"[save_with_agent] 🔍 Current message count in state: {len(state.get('messages', []))}")
+    
     if not state.get("messages"):
-        extracted_json = state["final_output"]
+        print("[save_with_agent] 🛤️ Branch: FIRST PASS (No previous messages).")
+        
+        extracted_json = state.get("final_output", "{}")
+        
+        # 🚨 NEW FULL LOGGING HERE 🚨
+        print("\n" + "-"*20 + " FULL JSON PAYLOAD " + "-"*20)
+        print(extracted_json)
+        print("-" * 59 + "\n")
+        
         initial_instruction = system_prompt.format(
             teacher_id=state["teacher_id"],
             assignment_id=state["assignment_id"],
         ) + f"\n\nJSON TO PROCESS:\n{extracted_json}"
         
+        # Optional: Uncomment the next two lines if you want to see the ENTIRE prompt sent to the LLM
+        # print("\n[save_with_agent] 📝 FULL PROMPT SENT TO LLM:\n")
+        # print(initial_instruction)
+        
         messages_to_process = [HumanMessage(content=initial_instruction)]
     else:
-        # If we are looping back from a tool call, just pass the message history
+        print("[save_with_agent] 🛤️ Branch: LOOPING BACK. Using existing message history.")
         messages_to_process = state["messages"]
 
-    # Use the LLM that actually has tools bound to it!
+    print(f"[save_with_agent] 🧠 Invoking LLM with {len(messages_to_process)} messages...")
+    
     response = agent_llm.invoke(messages_to_process)
 
-    if hasattr(response, "tool_calls"):
-        print(f"[save_with_agent] tool_calls={response.tool_calls}")
-
-        if state.get("document_type") == "rubric":
-            missing_rubric_args = any(
-                call.get("name") == "insert_rubric"
-                and "rubric_description" not in call.get("args", {})
-                for call in response.tool_calls
-            )
-            if missing_rubric_args:
-                try:
-                    extracted = json.loads(state["final_output"])
-                    for label, rubric in extracted.items():
-                        tools_by_name = {tool_item.name: tool_item for tool_item in tools}
-                        tools_by_name["insert_rubric"].invoke(
-                            {
-                                "teacher_id": state["teacher_id"],
-                                "assignment_id": state["assignment_id"],
-                                "question_label": label,
-                                "rubric_description": rubric,
-                            }
-                        )
-                    return {"messages": [HumanMessage(content="Rubrics inserted directly.")]}
-                except Exception as e:
-                    print(f"[save_with_agent] Rubric direct insert failed: {e}")
-                    return {"messages": [HumanMessage(content=f"Rubric insert failed: {e}")]}
+    print(f"[save_with_agent] ✅ LLM Responded.")
     
-    # CRITICAL FIX: Must return to the "messages" array so the router can read it
+    if response.content:
+         print(f"[save_with_agent] 💬 LLM Text Content: '{response.content}'")
+
+    if hasattr(response, "tool_calls") and response.tool_calls:
+        print(f"[save_with_agent] 🛠️ LLM requested {len(response.tool_calls)} tool calls:")
+        for i, call in enumerate(response.tool_calls):
+            print(f"    {i+1}. Tool Name: {call.get('name')}")
+            print(f"       Args: {call.get('args')}")
+    else:
+        print("[save_with_agent] 🛑 No tool calls requested by LLM. It is finished.")
+    
+    print("="*50 + "\n")
+    
     return {"messages": [response]}

@@ -4,6 +4,8 @@ from .state import AssignmentState
 from .prompt import grader_1_prompt,grader_2_prompt
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
+from .tools import tools
+from langgraph.prebuilt import ToolNode
 
 class GraderOutput(BaseModel):
     score: float = Field(
@@ -21,10 +23,15 @@ def init_supervisor_node(state: AssignmentState):
     """Fetches ALL labels for the assignment and creates the queue."""
     print("Supervisor: Initializing assignment queue...")
     
+    print("this is the state")
+    print(AssignmentState)
     result_str = get_assignment_labels.invoke({
         "teacher_id": state["teacher_id"],
         "assignment_id": state["assignment_id"]
     })
+
+    print("this is the label data")
+    print(result_str)
     
     data = json.loads(result_str)
     labels = data.get("labels", [])

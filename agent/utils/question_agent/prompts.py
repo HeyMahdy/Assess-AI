@@ -8,8 +8,12 @@ CRITICAL RULES:
 
 Example Output:
 {
-  "1a": "The exact question text here...",
-  "1b": "The exact question text here..."
+  "questions": [
+    {
+      "question_label": "Q1",
+      "question_description": "Question text here..."
+    }
+  ]
 }
 """
 

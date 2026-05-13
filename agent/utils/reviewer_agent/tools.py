@@ -74,9 +74,15 @@ def get_assignment_labels(teacher_id: str, assignment_id: int) -> str:
                 # If the assignment is empty, tell the agent
                 if not labels:
                     return json.dumps({"message": "No questions found for this assignment."})
+                
+                print("tool got called")
                     
                 # Return as a JSON string so the LLM can parse it easily
                 return json.dumps({"labels": labels})
                 
     except Exception as e:
         return json.dumps({"error": f"Database error fetching labels: {str(e)}"})
+    
+
+tools = [fetch_evaluation_context,get_assignment_labels]
+tools_by_name = {tool_item.name: tool_item for tool_item in tools}
