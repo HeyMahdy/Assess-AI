@@ -5,6 +5,3 @@ export const authRouter = Router();
 
 authRouter.post('/signup', auth.signup);
 authRouter.post('/login', auth.login);
-authRouter.post('/password/forgot', auth.passwordForgot);
-authRouter.post('/password/reset', auth.passwordReset);
-authRouter.post('/refresh', auth.refresh);
