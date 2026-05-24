@@ -14,7 +14,7 @@ from .tools import tools
 load_dotenv()
 
 # 1. Initialize LLMs
-llm = ChatOpenAI(model="gpt-4o", temperature=0)
+llm = ChatOpenAI(model="gpt-5.4-mini", temperature=0)
 
 # CRITICAL FIX: The saving agent MUST have tools bound to it!
 agent_llm = llm.bind_tools(tools)
@@ -27,34 +27,52 @@ tool_node = ToolNode(tools)
 # ---------------------------------------------------------
 def dynamic_extract_node(state: AgentState):
     """Acts as Scribe or Architect depending on document_type."""
-    content = state["file_content"]
-    doc_type = state["document_type"]
     
-    if doc_type == "rubric":
-        active_prompt = RUBRIC_PROMPT
-    else:
-        active_prompt = TEACHER_SOLVE_PROMPT
+    
+    # 1. Choose the prompt based on document type
+    
+    active_prompt = TEACHER_SOLVE_PROMPT
         
     messages = [SystemMessage(content=active_prompt)]
     
-    if state["file_type"] == "image":
-        messages.append(
-            HumanMessage(
-                content=[
-                    {"type": "text", "text": "Please transcribe and structure this document."},
-                    {"type": "image_url", "image_url": {"url": content}}
-                ]
-            )
-        )
-    else:
-        messages.append(
-            HumanMessage(content=f"Here is the raw text to structure:\n\n{content}")
-        )
+    # 2. Build the list of images for the Vision LLM
+    # We start with our text instruction block
+    human_content = [
+        {"type": "text", "text": "Please transcribe and structure these document pages seamlessly together."}
+    ]
 
+    # Loop through all uploaded images and append them into human_content
+    if "files" in state:
+        for item in state["files"]:
+            image_data_url = item["content"]  # This holds the base64 string of the image
+            
+            # Append each image layout to the payload
+            human_content.append({
+                "type": "image_url", 
+                "image_url": {"url": image_data_url}
+            })
+            
+    # 3. Wrap everything inside a single HumanMessage and send it to the AI
+    messages.append(HumanMessage(content=human_content))
+
+    # Strict JSON formatting constraint
     json_llm = llm.bind(response_format={"type": "json_object"})
     response = json_llm.invoke(messages)
+
+
+
+    try:
+        # If it's a valid JSON string, parsing and re-dumping with ensure_ascii=False 
+        # fixes any raw string truncation errors instantly.
+        parsed_string = json.loads(response.content)
+        final_string_payload = json.dumps(parsed_string, ensure_ascii=False)
+    except Exception:
+        # Fallback to direct string content if it's already a clean string format
+        final_string_payload = response.content
     
-    return {"final_output": response.content}
+    return {"final_output": final_string_payload}
+    
+  
 
 # ---------------------------------------------------------
 # NODE 2: The Agent Brain
@@ -70,17 +88,17 @@ def save_with_agent(state: AgentState):
     if not state.get("messages"):
         print("[save_with_agent] 🛤️ Branch: FIRST PASS (No previous messages).")
         
-        extracted_json = state.get("final_output", "{}")
+        raw_json_string = state.get("final_output", "{}")
+        parsed_data = json.loads(raw_json_string)
+        questions_list = parsed_data.get("questions", [])
+        formatted_questions_block = json.dumps(questions_list, indent=2)
         
-        # 🚨 NEW FULL LOGGING HERE 🚨
-        print("\n" + "-"*20 + " FULL JSON PAYLOAD " + "-"*20)
-        print(extracted_json)
-        print("-" * 59 + "\n")
+
         
         initial_instruction = system_prompt.format(
             teacher_id=state["teacher_id"],
             assignment_id=state["assignment_id"],
-        ) + f"\n\nJSON TO PROCESS:\n{extracted_json}"
+        ) + f"\n\nHere is the exact data array you must loop over and save using the 'insert_question' tool:\n{formatted_questions_block}"
         
         # Optional: Uncomment the next two lines if you want to see the ENTIRE prompt sent to the LLM
         # print("\n[save_with_agent] 📝 FULL PROMPT SENT TO LLM:\n")

@@ -30,22 +30,43 @@ app = FastAPI(title="AI Grading Engine API")
 # ==========================================
 # HELPER: STANDARD FILE PARSER
 # ==========================================
-async def parse_standard_file(contents: bytes, content_type: str) -> dict:
-    """Helper function to parse PDFs or encode Images for the LLM."""
-    if content_type.startswith("image/"):
-        encoded_image = base64.b64encode(contents).decode("utf-8")
-        image_data_url = f"data:{content_type};base64,{encoded_image}"
-        return {"file_content": image_data_url, "file_type": "image"}
-        
-    elif content_type == "application/pdf":
-        pdf_reader = pypdf.PdfReader(io.BytesIO(contents))
-        extracted_text = ""
-        for page in pdf_reader.pages:
-            extracted_text += page.extract_text() + "\n"
-            
-        if not extracted_text.strip():
-            raise HTTPException(status_code=400, detail="Could not extract text from PDF. Might be a scanned image.")
-        return {"file_content": extracted_text, "file_type": "pdf"}
+import base64
+import pypdf
+import io
+from fastapi import HTTPException
+
+async def parse_standard_file(contents_list: list[bytes], content_types_list: list[str]) -> dict:
+    """
+    Helper function to parse a batch of PDFs or encode images for the LLM.
+    Returns a unified initial state payload for LangGraph.
+    """
+    # A list to store multiple image data URLs or text segments from all files
+    processed_items = []
     
-    else:
-         raise HTTPException(status_code=400, detail="Unsupported file type.")
+    # We use zip() to iterate through both lists side-by-side matching each file with its type
+    for contents, content_type in zip(contents_list, content_types_list):
+        
+        if content_type.startswith("image/"):
+            # Encode raw binary bytes into base64 text syntax
+            encoded_image = base64.b64encode(contents).decode("utf-8")
+            image_data_url = f"data:{content_type};base64,{encoded_image}"
+            
+            processed_items.append({"content": image_data_url, "type": "image"})
+            
+        elif content_type == "application/pdf":
+            # Wrap bytes in a file-like stream object so pypdf can read it from memory
+            pdf_reader = pypdf.PdfReader(io.BytesIO(contents))
+            extracted_text = ""
+            for page in pdf_reader.pages:
+                extracted_text += page.extract_text() + "\n"
+                
+            if not extracted_text.strip():
+                raise HTTPException(status_code=400, detail="Could not extract text from PDF. Might be a scanned image.")
+            
+            processed_items.append({"content": extracted_text, "type": "pdf"})
+        
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported file type: {content_type}")
+            
+    # Return a single structure holding all parsed items
+    return {"files": processed_items, "file_type": "batch_mix"}

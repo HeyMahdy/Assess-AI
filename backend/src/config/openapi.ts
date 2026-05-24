@@ -1,31 +1,24 @@
+import { assignmentPaths } from '../docs/assignment.openapi.js';
+import { questionPaths } from '../docs/question.openapi.js';
+
 const profileSchema = {
   type: 'object',
   properties: {
     id: { type: 'string', format: 'uuid' },
+    email: { type: 'string', format: 'email' },
     display_name: { type: 'string', nullable: true },
-    avatar_url: { type: 'string', nullable: true },
-    role: { type: 'string', enum: ['student', 'teacher', 'admin'] },
   },
-  required: ['id', 'display_name', 'avatar_url', 'role'],
+  required: ['id', 'email', 'display_name'],
 } as const;
 
-const sessionSchema = {
+const authTokenSchema = {
   type: 'object',
   properties: {
     access_token: { type: 'string' },
-    refresh_token: { type: 'string' },
-    expires_in: { type: 'integer' },
-    expires_at: { type: 'integer', nullable: true },
-    token_type: { type: 'string' },
-    user: {
-      type: 'object',
-      properties: {
-        id: { type: 'string', format: 'uuid' },
-        email: { type: 'string', nullable: true },
-        email_confirmed_at: { type: 'string', format: 'date-time', nullable: true },
-      },
-    },
+    token_type: { type: 'string', example: 'Bearer' },
+    user: profileSchema,
   },
+  required: ['access_token', 'token_type', 'user'],
 } as const;
 
 const errorSchema = {
@@ -40,7 +33,7 @@ export const openApiDocument = {
     title: 'Assess AI API',
     version: '1.0.0',
     description:
-      'Auth uses Supabase. Protected routes send `Authorization: Bearer <access_token>`. Role claims for API authorization are loaded from `public.profiles` (not `user_metadata`).',
+      'Auth uses local JWT tokens. Protected routes send `Authorization: Bearer <access_token>`.',
   },
   components: {
     securitySchemes: {
@@ -48,11 +41,13 @@ export const openApiDocument = {
         type: 'http',
         scheme: 'bearer',
         bearerFormat: 'JWT',
-        description: 'Supabase access token (JWT).',
+        description: 'JWT access token.',
       },
     },
   },
   paths: {
+    ...assignmentPaths,
+    ...questionPaths,
     '/health': {
       get: {
         summary: 'Health check',
@@ -97,20 +92,10 @@ export const openApiDocument = {
         },
         responses: {
           '201': {
-            description:
-              'User created. With Supabase “Confirm email” off, body matches login session. If confirmation is required, body is only `{ userId }`.',
+            description: 'User created',
             content: {
               'application/json': {
-                schema: {
-                  oneOf: [
-                    sessionSchema,
-                    {
-                      type: 'object',
-                      properties: { userId: { type: 'string', format: 'uuid', nullable: true } },
-                      required: ['userId'],
-                    },
-                  ],
-                },
+                schema: authTokenSchema,
               },
             },
           },
@@ -142,104 +127,11 @@ export const openApiDocument = {
         },
         responses: {
           '200': {
-            description: 'Session',
-            content: { 'application/json': { schema: sessionSchema } },
+            description: 'JWT session',
+            content: { 'application/json': { schema: authTokenSchema } },
           },
           '401': {
             description: 'Invalid credentials',
-            content: { 'application/json': { schema: errorSchema } },
-          },
-        },
-      },
-    },
-    '/auth/password/forgot': {
-      post: {
-        tags: ['Auth'],
-        summary: 'Request Supabase password reset email',
-        requestBody: {
-          required: true,
-          content: {
-            'application/json': {
-              schema: {
-                type: 'object',
-                required: ['email'],
-                properties: { email: { type: 'string', format: 'email' } },
-              },
-            },
-          },
-        },
-        responses: {
-          '200': {
-            description: 'Email dispatched',
-            content: {
-              'application/json': {
-                schema: {
-                  type: 'object',
-                  properties: { ok: { type: 'boolean' } },
-                  required: ['ok'],
-                },
-              },
-            },
-          },
-          '400': { description: 'Error', content: { 'application/json': { schema: errorSchema } } },
-        },
-      },
-    },
-    '/auth/password/reset': {
-      post: {
-        tags: ['Auth'],
-        summary: 'Complete password reset using recovery OTP token from email',
-        requestBody: {
-          required: true,
-          content: {
-            'application/json': {
-              schema: {
-                type: 'object',
-                required: ['email', 'token', 'newPassword'],
-                properties: {
-                  email: { type: 'string', format: 'email' },
-                  token: { type: 'string' },
-                  newPassword: { type: 'string', minLength: 8, maxLength: 128 },
-                },
-              },
-            },
-          },
-        },
-        responses: {
-          '200': {
-            description: 'Session after password change',
-            content: { 'application/json': { schema: sessionSchema } },
-          },
-          '400': {
-            description: 'Invalid token',
-            content: { 'application/json': { schema: errorSchema } },
-          },
-        },
-      },
-    },
-    '/auth/refresh': {
-      post: {
-        tags: ['Auth'],
-        summary: 'Refresh session',
-        requestBody: {
-          required: true,
-          content: {
-            'application/json': {
-              schema: {
-                type: 'object',
-                required: ['refresh_token'],
-                properties: { refresh_token: { type: 'string' } },
-              },
-            },
-          },
-        },
-        responses: {
-          '200': {
-            description: 'Session',
-            content: { 'application/json': { schema: sessionSchema } },
-          },
-          '401': {
-            description: 'Invalid refresh token',
             content: { 'application/json': { schema: errorSchema } },
           },
         },
@@ -267,7 +159,7 @@ export const openApiDocument = {
       },
       patch: {
         tags: ['Users'],
-        summary: 'Update my profile (display fields only; roles are admin-only)',
+        summary: 'Update my profile',
         security: [{ bearerAuth: [] }],
         requestBody: {
           required: true,
@@ -277,92 +169,6 @@ export const openApiDocument = {
                 type: 'object',
                 properties: {
                   display_name: { type: 'string', nullable: true, maxLength: 200 },
-                  avatar_url: { type: 'string', nullable: true, format: 'uri' },
-                },
-                additionalProperties: false,
-              },
-            },
-          },
-        },
-        responses: {
-          '200': {
-            description: 'Updated profile',
-            content: { 'application/json': { schema: profileSchema } },
-          },
-          '400': {
-            description: 'Validation error',
-            content: { 'application/json': { schema: errorSchema } },
-          },
-          '401': {
-            description: 'Unauthorized',
-            content: { 'application/json': { schema: errorSchema } },
-          },
-        },
-      },
-    },
-    '/users': {
-      get: {
-        tags: ['Users'],
-        summary: 'List users (admin)',
-        security: [{ bearerAuth: [] }],
-        parameters: [
-          {
-            name: 'limit',
-            in: 'query',
-            schema: { type: 'integer', minimum: 1, maximum: 100, default: 50 },
-          },
-          { name: 'offset', in: 'query', schema: { type: 'integer', minimum: 0, default: 0 } },
-        ],
-        responses: {
-          '200': {
-            description: 'Paged profiles',
-            content: {
-              'application/json': {
-                schema: {
-                  type: 'object',
-                  properties: {
-                    items: { type: 'array', items: profileSchema },
-                    total: { type: 'integer' },
-                  },
-                  required: ['items', 'total'],
-                },
-              },
-            },
-          },
-          '401': {
-            description: 'Unauthorized',
-            content: { 'application/json': { schema: errorSchema } },
-          },
-          '403': {
-            description: 'Forbidden',
-            content: { 'application/json': { schema: errorSchema } },
-          },
-        },
-      },
-    },
-    '/users/{userId}': {
-      patch: {
-        tags: ['Users'],
-        summary: 'Update a user profile (admin)',
-        security: [{ bearerAuth: [] }],
-        parameters: [
-          {
-            name: 'userId',
-            in: 'path',
-            required: true,
-            schema: { type: 'string', format: 'uuid' },
-          },
-        ],
-        requestBody: {
-          required: true,
-          content: {
-            'application/json': {
-              schema: {
-                type: 'object',
-                properties: {
-                  display_name: { type: 'string', nullable: true },
-                  avatar_url: { type: 'string', nullable: true, format: 'uri' },
-                  role: { type: 'string', enum: ['student', 'teacher', 'admin'] },
                 },
                 additionalProperties: false,
                 minProperties: 1,
@@ -381,14 +187,6 @@ export const openApiDocument = {
           },
           '401': {
             description: 'Unauthorized',
-            content: { 'application/json': { schema: errorSchema } },
-          },
-          '403': {
-            description: 'Forbidden',
-            content: { 'application/json': { schema: errorSchema } },
-          },
-          '404': {
-            description: 'User not found',
             content: { 'application/json': { schema: errorSchema } },
           },
         },

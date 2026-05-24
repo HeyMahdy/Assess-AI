@@ -31,7 +31,7 @@ export function createApp() {
 export const app = createApp();
 
 if (env.NODE_ENV !== 'test') {
-  app.listen(env.PORT, () => {
+  app.listen(8080, () => {
     logger.info({ port: env.PORT }, 'server listening');
   });
 }
