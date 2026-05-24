@@ -8,7 +8,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 from langgraph.prebuilt import ToolNode
 
-from .prompts import RUBRIC_PROMPT, TEACHER_SOLVE_PROMPT, system_prompt
+from .prompts import  TEACHER_QUESTION_PROMPT, system_prompt
 from .state import AgentState
 from .tools import tools
 from .node import dynamic_extract_node,tool_node,save_with_agent

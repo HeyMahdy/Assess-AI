@@ -7,7 +7,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 from langgraph.prebuilt import ToolNode
 
-from .prompts import RUBRIC_PROMPT, TEACHER_SOLVE_PROMPT, system_prompt
+from .prompts import  TEACHER_QUESTION_PROMPT, system_prompt
 from .state import AgentState
 from .tools import tools
 
@@ -31,7 +31,7 @@ def dynamic_extract_node(state: AgentState):
     
     # 1. Choose the prompt based on document type
     
-    active_prompt = TEACHER_SOLVE_PROMPT
+    active_prompt = TEACHER_QUESTION_PROMPT
         
     messages = [SystemMessage(content=active_prompt)]
     
