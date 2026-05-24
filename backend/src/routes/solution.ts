@@ -1,6 +1,21 @@
 import { Router } from 'express';
-import { uploadSolution, getSolutionsByAssignment } from '../controllers/solutionController';
+import multer from 'multer';
+import { uploadSolutions, getSolutionsByAssignment, updateSolutionById } from '../controllers/solutionController.js';
+import { requireAccessToken } from '../common/middleware/jwt.middleware.js';
 
+const upload = multer({ storage: multer.memoryStorage() });
 export const solutionRouter = Router();
-solutionRouter.post('/assignments/:assignmentId/solutions/upload', uploadSolution);
+
+// Secure all solution routes with global access token verification middleware
+solutionRouter.use(requireAccessToken);
+
+// 1. Process and upload multiple solution files (Max 10 files)
+solutionRouter.post(
+  '/assignments/:assignmentId/solutions/upload', 
+  upload.array('files', 10), 
+  uploadSolutions
+);
+
 solutionRouter.get('/assignments/:assignmentId/solutions', getSolutionsByAssignment);
+
+solutionRouter.patch('/assignments/:solutionId/solutions', updateSolutionById);
