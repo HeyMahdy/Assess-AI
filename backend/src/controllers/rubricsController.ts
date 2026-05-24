@@ -181,3 +181,52 @@ export const updateRubricById = async (req: Request, res: Response) => {
     });
   }
 };
+
+
+/**
+ * Manually create a rubric for a question (no file upload / no AI)
+ */
+export const createRubricManually = async (req: Request, res: Response) => {
+  try {
+    const { assignmentId } = req.params;
+    const { question_label, rubric_description } = req.body;
+    const teacherId = req.authUser?.id;
+
+    if (!teacherId) {
+      return res.status(401).json({ error: 'Unauthorized: Missing teacher identity' });
+    }
+
+    if (!question_label || !rubric_description) {
+      return res.status(400).json({ error: 'question_label and rubric_description are required' });
+    }
+
+    if (typeof rubric_description !== 'object') {
+      return res.status(400).json({ error: 'rubric_description must be a JSON object' });
+    }
+
+    const query = `
+      INSERT INTO public.rubrics (teacher_id, assignment_id, question_label, rubric_description)
+      VALUES ($1, $2, $3, $4::jsonb)
+      RETURNING id, question_label, rubric_description, created_at;
+    `;
+
+    const result = await pool.query(query, [
+      teacherId,
+      assignmentId,
+      question_label,
+      JSON.stringify(rubric_description)
+    ]);
+
+    return res.status(201).json({
+      message: 'Rubric created successfully',
+      data: result.rows[0]
+    });
+
+  } catch (error: any) {
+    console.error('Error creating rubric manually:', error.message);
+    return res.status(500).json({
+      error: 'Database error',
+      details: error.message
+    });
+  }
+};

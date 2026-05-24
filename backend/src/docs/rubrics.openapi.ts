@@ -120,6 +120,93 @@ export const rubricPaths = {
     },
   },
   '/assignments/{assignmentId}/rubrics': {
+    post: {
+      tags: ['Rubrics'],
+      summary: 'Manually create a rubric for a question',
+      description: 'Creates a rubric entry directly without file upload or AI processing.',
+      security: [{ bearerAuth: [] }],
+      parameters: [
+        {
+          name: 'assignmentId',
+          in: 'path',
+          required: true,
+          schema: { type: 'string' },
+        },
+      ],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['question_label', 'rubric_description'],
+              properties: {
+                question_label: { type: 'string', description: 'The question label (e.g., "1a", "Q2")' },
+                rubric_description: {
+                  type: 'object',
+                  description: 'The rubric structure',
+                  properties: {
+                    criteria: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          points: { type: 'number' },
+                          description: { type: 'string' },
+                        },
+                        required: ['points', 'description'],
+                      },
+                    },
+                    penalties: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          deduction: { type: 'number' },
+                          condition: { type: 'string' },
+                        },
+                        required: ['deduction', 'condition'],
+                      },
+                    },
+                    fatal_flaw: { type: 'string', nullable: true },
+                  },
+                  required: ['criteria', 'penalties', 'fatal_flaw'],
+                },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        '201': {
+          description: 'Rubric created successfully',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  message: { type: 'string' },
+                  data: rubricSchema,
+                },
+                required: ['message', 'data'],
+              },
+            },
+          },
+        },
+        '400': {
+          description: 'Missing required fields',
+          content: { 'application/json': { schema: rubricErrorSchema } },
+        },
+        '401': {
+          description: 'Unauthorized',
+          content: { 'application/json': { schema: rubricErrorSchema } },
+        },
+        '500': {
+          description: 'Database error',
+          content: { 'application/json': { schema: rubricErrorSchema } },
+        },
+      },
+    },
     get: {
       tags: ['Rubrics'],
       summary: 'Get all rubrics belonging to a specific assignment',

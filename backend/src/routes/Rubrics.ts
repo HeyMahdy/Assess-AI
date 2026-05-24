@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
-import { uploadRubrics, getRubricsByAssignment, updateRubricById } from '../controllers/rubricsController.js';
+import { uploadRubrics, getRubricsByAssignment, updateRubricById, createRubricManually } from '../controllers/rubricsController.js';
 import { requireAccessToken } from '../common/middleware/jwt.middleware.js';
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -15,6 +15,9 @@ rubricRouter.post(
   upload.array('files', 10), 
   uploadRubrics
 );
+
+// 2. Manually create a rubric (no file upload)
+rubricRouter.post('/assignments/:assignmentId/rubrics', createRubricManually);
 
 rubricRouter.get('/assignments/:assignmentId/rubrics', getRubricsByAssignment);
 
