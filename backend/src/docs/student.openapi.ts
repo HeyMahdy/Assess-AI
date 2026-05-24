@@ -18,7 +18,7 @@ const studentErrorSchema = {
   required: ['error'],
 } as const;
 
-export const studentPaths = {
+export const studentPaths: Record<string, any> = {
   '/students': {
     post: {
       tags: ['Students'],
@@ -266,4 +266,4 @@ export const studentPaths = {
       },
     },
   },
-} as const;
+};

@@ -7,6 +7,8 @@ import { questionRouter } from './Question.js';
 import { rubricRouter } from './Rubrics.js';
 import { solutionRouter } from './solution.js';
 import { studentRouter } from './student.js';
+import { studentAnswerRouter } from './studentAnswer.js';
+
 
 
 export const rootRouter = Router();
@@ -20,3 +22,4 @@ rootRouter.use('/', questionRouter);
 rootRouter.use('/', rubricRouter);
 rootRouter.use('/', solutionRouter);
 rootRouter.use('/', studentRouter);
+rootRouter.use('/', studentAnswerRouter);

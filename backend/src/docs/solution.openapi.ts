@@ -18,7 +18,7 @@ const solutionErrorSchema = {
   required: ['error'],
 } as const;
 
-export const solutionPaths = {
+export const solutionPaths: Record<string, any> = {
   '/assignments/{assignmentId}/solutions/upload': {
     post: {
       tags: ['Solutions'],
@@ -199,4 +199,4 @@ export const solutionPaths = {
       },
     },
   },
-} as const;
+};

@@ -1,7 +1,9 @@
 import { assignmentPaths } from '../docs/assignment.openapi.js';
 import { questionPaths } from '../docs/question.openapi.js';
-import {rubricPaths} from '../docs/rubrics.openapi.js'
-import {solutionPaths} from '../docs/solution.openapi.js'
+import { rubricPaths } from '../docs/rubrics.openapi.js';
+import { solutionPaths } from '../docs/solution.openapi.js';
+import { studentPaths } from '../docs/student.openapi.js';
+import { studentAnswerPaths } from '../docs/studentAnswer.openapi.js';
 
 const profileSchema = {
   type: 'object',
@@ -52,6 +54,8 @@ export const openApiDocument = {
     ...questionPaths,
     ...rubricPaths,
     ...solutionPaths,
+    ...studentPaths,
+    ...studentAnswerPaths,
     '/health': {
       get: {
         summary: 'Health check',
@@ -197,4 +201,4 @@ export const openApiDocument = {
       },
     },
   },
-} as const;
+};
