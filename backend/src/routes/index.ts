@@ -4,6 +4,8 @@ import { healthRouter } from './healthRoute.js';
 import { userRouter } from './userRoute.js';
 import { assignmentRouter } from './Assignment.js';
 import {questionRouter} from './Question.js'
+import { rubricRouter } from './Rubrics.js';
+
 
 export const rootRouter = Router();
 
@@ -13,3 +15,4 @@ rootRouter.use('/users', userRouter);
 rootRouter.use('/assignments', assignmentRouter);
 rootRouter.use('/teachers', assignmentRouter);
 rootRouter.use('/',questionRouter)
+rootRouter.use('/',rubricRouter)

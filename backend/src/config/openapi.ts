@@ -1,5 +1,6 @@
 import { assignmentPaths } from '../docs/assignment.openapi.js';
 import { questionPaths } from '../docs/question.openapi.js';
+import {rubricPaths} from '../docs/rubrics.openapi.js'
 
 const profileSchema = {
   type: 'object',
@@ -48,6 +49,7 @@ export const openApiDocument = {
   paths: {
     ...assignmentPaths,
     ...questionPaths,
+    ...rubricPaths,
     '/health': {
       get: {
         summary: 'Health check',

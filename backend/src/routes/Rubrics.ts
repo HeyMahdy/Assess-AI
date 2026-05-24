@@ -1,9 +1,22 @@
-
-
 import { Router } from 'express';
-import { uploadRubric, getRubricsByAssignment, updateRubric } from '../controllers/rubricController';
+import multer from 'multer';
+import { uploadRubrics, getRubricsByAssignment, updateRubricById } from '../controllers/rubricsController.js';
+import { requireAccessToken } from '../common/middleware/jwt.middleware.js';
 
+const upload = multer({ storage: multer.memoryStorage() });
 export const rubricRouter = Router();
-rubricRouter.post('/assignments/:assignmentId/rubrics/upload', uploadRubric);
+
+// Secure all rubric routes with global access token verification middleware
+rubricRouter.use(requireAccessToken);
+
+// 1. Process and upload multiple rubric visual sheets (Max 10 files)
+rubricRouter.post(
+  '/assignments/:assignmentId/rubrics/upload', 
+  upload.array('files', 10), 
+  uploadRubrics
+);
+
 rubricRouter.get('/assignments/:assignmentId/rubrics', getRubricsByAssignment);
-rubricRouter.patch('/rubrics/:rubricId', updateRubric);
+
+
+rubricRouter.patch('/assignments/:rubricId/rubrics', updateRubricById);

@@ -12,10 +12,12 @@ from config.db import get_db_connection
 from utils.answer_agent.graph import build_graph as build_answer_graph
 from utils.question_agent.graph import build_graph as build_question_graph
 from utils.reviewer_agent.graph import build_graph as grading_app
+from utils.rubrics_agent.graph import build_rubric_graph as rubric_graph
 from pydantic import BaseModel, Field
 app_graph = build_answer_graph()
 app_graph_01 = build_question_graph()
 app_graph_02=grading_app()
+app_graph_03 = rubric_graph()
 
 load_dotenv()
 
@@ -27,72 +29,10 @@ load_dotenv()
 
 app = FastAPI(title="LangGraph PDF & Image Analyzer")
 
-@app.get("/api/seed-data")
-async def get_seed_data():
-    teacher_id = "22222222-2222-2222-2222-222222222222"
-    student_id = "STU-999"
-    assignment_id = 3
-
-    sql_questions = """
-        SELECT question_label, question_description
-        FROM public.questions
-        WHERE teacher_id = %s AND assignment_id = %s
-        ORDER BY question_label;
-    """
-
-    sql_answers = """
-        SELECT question_label, answer
-        FROM public.student_answers
-        WHERE teacher_id = %s AND student_id = %s AND assignment_id = %s
-        ORDER BY question_label;
-    """
-
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(sql_questions, (teacher_id, assignment_id))
-                questions = cur.fetchall()
-                cur.execute(sql_answers, (teacher_id, student_id, assignment_id))
-                answers = cur.fetchall()
-
-        return {
-            "teacher_id": teacher_id,
-            "student_id": student_id,
-            "assignment_id": assignment_id,
-            "questions": questions,
-            "student_answers": answers,
-        }
-    except Exception as e:
-        print(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"{e.__class__.__name__}: {e}")
 
 
-@app.get("/api/questions")
-async def get_questions():
-    teacher_id = "22222222-2222-2222-2222-222222222222"
-    assignment_id = 3
 
-    sql_questions = """
-        SELECT question_label, question_description
-        FROM public.questions
-        WHERE teacher_id = %s AND assignment_id = %s
-        ORDER BY question_label;
-    """
 
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(sql_questions, (teacher_id, assignment_id))
-                questions = cur.fetchall()
-
-        return {
-            "teacher_id": teacher_id,
-            "assignment_id": assignment_id,
-            "questions": questions,
-        }
-    except Exception as e:
-        print(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"{e.__class__.__name__}: {e}")
 
 
 @app.get("/api/rubrics")
@@ -202,60 +142,46 @@ async def analyze_file_endpoint(
 # ==========================================
 @app.post("/internal/agent/rubrics/process")
 async def process_rubric_endpoint(
-    file: UploadFile = File(...),
-    is_handwritten: bool = Form(...),
+    files: list[UploadFile] = File(...),
+    is_handwritten: bool = Form(...),  # Kept in signature so Node.js controller won't break if it sends it
     teacher_id: str = Form(...),
     assignment_id: int = Form(...),
 ):
     """
-    Internal endpoint for processing rubric uploads.
-    The document_type is statically set to 'rubric'.
+    Internal endpoint for processing multiple rubric uploads at once.
+    All incoming files go directly to the vision agent via parse_standard_file.
     """
-    contents = await file.read()
-    
     try:
-        if is_handwritten:
-            # --- USE NORMAL LLM EXTRACTION FOR HANDWRITING ---
-            initial_state = await parse_standard_file(contents, file.content_type)
-            initial_state["document_type"] = "rubric"
-            initial_state["teacher_id"] = teacher_id
-            initial_state["assignment_id"] = assignment_id
-            result = app_graph_01.invoke(initial_state)
-            
-            return {
-                "method_used": "llm_vision",
-                "filename": file.filename,
-                "analysis": result["final_output"]
-            }
+        # Containers to collect data from ALL files
+        all_file_contents = []
+        all_content_types = []
+        
+        # 1. LOOP ONLY TO READ AND GATHER FILE DATA
+        for file in files:
+            contents = await file.read()
+            all_file_contents.append(contents)
+            all_content_types.append(file.content_type)
 
-        else:
-            # --- USE AWS TEXTRACT (DIRECT BYTES) FOR TYPED/NON-HANDWRITTEN ---
-            if not textract_client:
-                raise HTTPException(status_code=500, detail="AWS Textract client not configured.")
-            
-            # Send bytes directly to AWS Textract (No S3 required)
-            response = textract_client.detect_document_text(Document={'Bytes': contents})
-            
-            # Stitch the detected lines together
-            extracted_text = "\n".join(
-                [item["Text"] for item in response.get("Blocks", []) if item.get("BlockType") == "LINE"]
-            )
-            
-            if not extracted_text.strip():
-                raise HTTPException(status_code=400, detail="Textract could not read the document.")
-            
-            # Pass the Textract output to your LangGraph to structure it into JSON
-            initial_state = {"file_content": extracted_text, "file_type": "text"}
-            initial_state["document_type"] = "rubric"
-            initial_state["teacher_id"] = teacher_id
-            initial_state["assignment_id"] = assignment_id
-            result = app_graph_01.invoke(initial_state)
-            
-            return {
-                "method_used": "aws_textract_direct",
-                "filename": file.filename,
-                "analysis": result["final_output"]
-            }
+        # 2. PARSE ALL FILES DIRECTLY FOR THE LLM/AGENT LAYER
+        # This converts all files into a structured dictionary (e.g., base64 images)
+        initial_state = await parse_standard_file(all_file_contents, all_content_types)
+        
+        # Inject metadata into the compiled graph state
+        initial_state["document_type"] = "rubric"
+        initial_state["teacher_id"] = teacher_id
+        initial_state["assignment_id"] = assignment_id
+        
+        # 3. FIRE THE RUBRIC AGENT EXACTLY ONCE WITH ALL COMPILED FILE CONTEXTS
+        # Make sure 'rubric_graph' is your compiled langgraph object for rubrics!
+        # (e.g., rubric_graph = build_rubric_graph() from your rubrics_agent file)
+        result = app_graph_03.invoke(initial_state)
+
+        # 4. RETURN ONE SINGLE BATCHED RESPONSE
+        return {
+            "method_used": "agent_direct_process",
+            "files_processed": [f.filename for f in files],
+            "analysis": result["final_output"]
+        }
 
     except Exception as e:
         print(traceback.format_exc())
