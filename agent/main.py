@@ -13,11 +13,13 @@ from utils.answer_agent.graph import build_graph as build_answer_graph
 from utils.question_agent.graph import build_graph as build_question_graph
 from utils.reviewer_agent.graph import build_graph as grading_app
 from utils.rubrics_agent.graph import build_rubric_graph as rubric_graph
+from utils.solutions_agent.graph import build_solutions_graph as solutions_graph
 from pydantic import BaseModel, Field
 app_graph = build_answer_graph()
 app_graph_01 = build_question_graph()
 app_graph_02=grading_app()
 app_graph_03 = rubric_graph()
+app_graph_04 = solutions_graph()
 
 load_dotenv()
 
@@ -267,6 +269,51 @@ async def trigger_grading(request: GradeRequest):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/internal/agent/solutions/process")
+async def process_solution_endpoint(
+    files: list[UploadFile] = File(...),
+    is_handwritten: bool = Form(...),
+    teacher_id: str = Form(...),
+    assignment_id: int = Form(...),
+):
+    """
+    Internal endpoint for processing multiple solution uploads at once.
+    All incoming files go directly to the vision agent via parse_standard_file.
+    """
+    try:
+        # Containers to collect data from ALL files
+        all_file_contents = []
+        all_content_types = []
+        
+        # 1. LOOP ONLY TO READ AND GATHER FILE DATA
+        for file in files:
+            contents = await file.read()
+            all_file_contents.append(contents)
+            all_content_types.append(file.content_type)
+
+        # 2. PARSE ALL FILES DIRECTLY FOR THE LLM/AGENT LAYER
+        initial_state = await parse_standard_file(all_file_contents, all_content_types)
+        
+        # Inject metadata into the compiled graph state
+        initial_state["document_type"] = "solution"
+        initial_state["teacher_id"] = teacher_id
+        initial_state["assignment_id"] = assignment_id
+        
+        # 3. FIRE THE SOLUTIONS AGENT EXACTLY ONCE WITH ALL COMPILED FILE CONTEXTS
+        result = app_graph_04.invoke(initial_state)
+
+        # 4. RETURN ONE SINGLE BATCHED RESPONSE
+        return {
+            "method_used": "agent_direct_process",
+            "files_processed": [f.filename for f in files],
+            "analysis": result["final_output"]
+        }
+
+    except Exception as e:
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"{e.__class__.__name__}: {e}")
 
 
 
