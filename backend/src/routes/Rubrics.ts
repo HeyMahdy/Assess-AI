@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
-import { uploadRubrics, getRubricsByAssignment, updateRubricById, createRubricManually } from '../controllers/rubricsController.js';
+import { uploadRubrics, getRubricsByAssignment, updateRubricById, createRubricManually, deleteRubricById } from '../controllers/rubricsController.js';
 import { requireAccessToken } from '../common/middleware/jwt.middleware.js';
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -21,5 +21,6 @@ rubricRouter.post('/assignments/:assignmentId/rubrics', createRubricManually);
 
 rubricRouter.get('/assignments/:assignmentId/rubrics', getRubricsByAssignment);
 
-
 rubricRouter.patch('/assignments/:rubricId/rubrics', updateRubricById);
+
+rubricRouter.delete('/assignments/:assignmentId/rubrics/:rubricId', deleteRubricById);

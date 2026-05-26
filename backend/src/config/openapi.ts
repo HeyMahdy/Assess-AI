@@ -4,6 +4,7 @@ import { rubricPaths } from '../docs/rubrics.openapi.js';
 import { solutionPaths } from '../docs/solution.openapi.js';
 import { studentPaths } from '../docs/student.openapi.js';
 import { studentAnswerPaths } from '../docs/studentAnswer.openapi.js';
+import { gradingPaths } from '../docs/grading.openapi.js';
 
 const profileSchema = {
   type: 'object',
@@ -56,6 +57,7 @@ export const openApiDocument = {
     ...solutionPaths,
     ...studentPaths,
     ...studentAnswerPaths,
+    ...gradingPaths,
     '/health': {
       get: {
         summary: 'Health check',

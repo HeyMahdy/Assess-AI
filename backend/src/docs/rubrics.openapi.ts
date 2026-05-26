@@ -48,7 +48,7 @@ const rubricErrorSchema = {
 } as const;
 
 export const rubricPaths = {
-  '/assignments/:assignmentId/rubrics/upload': {
+  '/assignments/{assignmentId}/rubrics/upload': {
     post: {
       tags: ['Rubrics'],
       summary: 'Upload and process multiple rubric files',
@@ -324,19 +324,77 @@ export const rubricPaths = {
           },
         },
         '400': {
-          description: 'Bad Request: Provided payload contains no editable parameters or invalid body format',
+          description: 'Bad Request',
           content: { 'application/json': { schema: rubricErrorSchema } },
         },
         '401': {
-          description: 'Unauthorized: Authentication validation token missing or expired',
+          description: 'Unauthorized',
           content: { 'application/json': { schema: rubricErrorSchema } },
         },
         '404': {
-          description: 'Not Found: Target rubric does not exist or access privileges deny modifications',
+          description: 'Not Found',
           content: { 'application/json': { schema: rubricErrorSchema } },
         },
         '500': {
-          description: 'Internal Server Error: Database pipeline connection crash',
+          description: 'Internal Server Error',
+          content: { 'application/json': { schema: rubricErrorSchema } },
+        },
+      },
+    },
+  },
+  '/assignments/{assignmentId}/rubrics/{rubricId}': {
+    delete: {
+      tags: ['Rubrics'],
+      summary: 'Delete a rubric by assignment ID and rubric ID',
+      security: [{ bearerAuth: [] }],
+      parameters: [
+        {
+          name: 'assignmentId',
+          in: 'path',
+          required: true,
+          schema: { type: 'string' },
+          description: 'The assignment ID',
+        },
+        {
+          name: 'rubricId',
+          in: 'path',
+          required: true,
+          schema: { type: 'integer' },
+          description: 'The rubric ID to delete',
+        },
+      ],
+      responses: {
+        '200': {
+          description: 'Rubric deleted successfully',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  message: { type: 'string' },
+                  data: {
+                    type: 'object',
+                    properties: {
+                      id: { type: 'integer' },
+                      question_label: { type: 'string' },
+                    },
+                  },
+                },
+                required: ['message', 'data'],
+              },
+            },
+          },
+        },
+        '401': {
+          description: 'Unauthorized',
+          content: { 'application/json': { schema: rubricErrorSchema } },
+        },
+        '404': {
+          description: 'Rubric not found or unauthorized',
+          content: { 'application/json': { schema: rubricErrorSchema } },
+        },
+        '500': {
+          description: 'Database error',
           content: { 'application/json': { schema: rubricErrorSchema } },
         },
       },

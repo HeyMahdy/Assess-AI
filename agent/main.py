@@ -247,30 +247,32 @@ class GradeRequest(BaseModel):
     student_id: str
     assignment_id: int
 
-@app.post("/api/grade")
-async def trigger_grading(request: GradeRequest):
+@app.post("/internal/agent/grade/process")
+async def process_grading_endpoint(request: GradeRequest):
+    """
+    Internal endpoint for grading a student's assignment.
+    Called by the Node.js backend controller.
+    """
     try:
-        # Initial state to kick off the graph
         initial_state = {
             "teacher_id": request.teacher_id,
             "student_id": request.student_id,
             "assignment_id": request.assignment_id,
-            "all_results": [] # Initialize empty array
+            "all_results": []
         }
-        
-        # Invoke the graph synchronously (wait for all loops to finish)
+
         final_state = app_graph_02.invoke(initial_state)
-        
-        # Return only the aggregated results as JSON
+
         return {
             "status": "success",
             "student_id": request.student_id,
             "assignment_id": request.assignment_id,
             "results": final_state.get("all_results", [])
         }
-        
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"{e.__class__.__name__}: {e}")
 
 
 @app.post("/internal/agent/solutions/process")

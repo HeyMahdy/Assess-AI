@@ -199,4 +199,62 @@ export const solutionPaths: Record<string, any> = {
       },
     },
   },
+  '/assignments/{assignmentId}/solutions/{solutionId}': {
+    delete: {
+      tags: ['Solutions'],
+      summary: 'Delete a teacher solution by assignment ID and solution ID',
+      security: [{ bearerAuth: [] }],
+      parameters: [
+        {
+          name: 'assignmentId',
+          in: 'path',
+          required: true,
+          schema: { type: 'string' },
+          description: 'The assignment ID',
+        },
+        {
+          name: 'solutionId',
+          in: 'path',
+          required: true,
+          schema: { type: 'integer' },
+          description: 'The solution ID to delete',
+        },
+      ],
+      responses: {
+        '200': {
+          description: 'Solution deleted successfully',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  message: { type: 'string' },
+                  data: {
+                    type: 'object',
+                    properties: {
+                      id: { type: 'integer' },
+                      question_label: { type: 'string' },
+                    },
+                  },
+                },
+                required: ['message', 'data'],
+              },
+            },
+          },
+        },
+        '401': {
+          description: 'Unauthorized',
+          content: { 'application/json': { schema: solutionErrorSchema } },
+        },
+        '404': {
+          description: 'Solution not found or unauthorized',
+          content: { 'application/json': { schema: solutionErrorSchema } },
+        },
+        '500': {
+          description: 'Database error',
+          content: { 'application/json': { schema: solutionErrorSchema } },
+        },
+      },
+    },
+  },
 };
