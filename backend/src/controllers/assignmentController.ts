@@ -178,6 +178,13 @@ export const deleteAssignment = async (req: Request, res: Response) => {
     return res.json({ message: 'Assignment deleted successfully' });
   } catch (err: any) {
     console.error('Error deleting assignment:', err);
+    if (err.code === '23503') {
+      return res.status(409).json({
+        error: 'Assignment cannot be deleted because it still has related data',
+        details: 'Delete the related questions, rubrics, solutions, student answers, or grading results first, then try again.'
+      });
+    }
+
     return res.status(500).json({ error: 'Database error while deleting assignment', details: err.message });
   }
 };

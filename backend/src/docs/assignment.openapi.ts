@@ -21,8 +21,11 @@ const createAssignmentResponseSchema = {
 
 const errorSchema = {
   type: 'object',
-  properties: { message: { type: 'string' } },
-  required: ['message'],
+  properties: {
+    message: { type: 'string' },
+    error: { type: 'string' },
+    details: { type: 'string', nullable: true },
+  },
 } as const;
 
 export const assignmentPaths = {
@@ -229,6 +232,18 @@ export const assignmentPaths = {
         '404': {
           description: 'Assignment not found',
           content: { 'application/json': { schema: errorSchema } },
+        },
+        '409': {
+          description: 'Assignment has related data and cannot be deleted yet',
+          content: {
+            'application/json': {
+              schema: errorSchema,
+              example: {
+                error: 'Assignment cannot be deleted because it still has related data',
+                details: 'Delete the related questions, rubrics, solutions, student answers, or grading results first, then try again.',
+              },
+            },
+          },
         },
         '500': {
           description: 'Database error',
