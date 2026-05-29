@@ -99,6 +99,7 @@ export const questionPaths = {
     get: {
       tags: ['Questions'],
       summary: 'Get all questions belonging to a specific assignment',
+      description: 'Returns questions sorted by a normalized natural question-label order after fetching from the database.',
       security: [{ bearerAuth: [] }],
       parameters: [
         {

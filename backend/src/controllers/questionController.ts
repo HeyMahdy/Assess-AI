@@ -3,6 +3,157 @@ import axios from 'axios';
 import FormData from 'form-data';
 import {pool} from '../lib/database.js'
 
+type QuestionRow = {
+  id: number;
+  question_label: string;
+  question_description: string;
+  marks: number | null;
+  created_at: string;
+};
+
+type SortToken =
+  | { kind: 'number'; value: number; raw: string }
+  | { kind: 'roman'; value: number; raw: string }
+  | { kind: 'letter'; value: number; raw: string }
+  | { kind: 'text'; value: string; raw: string };
+
+const romanNumerals: Record<string, number> = {
+  i: 1,
+  ii: 2,
+  iii: 3,
+  iv: 4,
+  v: 5,
+  vi: 6,
+  vii: 7,
+  viii: 8,
+  ix: 9,
+  x: 10,
+  xi: 11,
+  xii: 12,
+  xiii: 13,
+  xiv: 14,
+  xv: 15,
+  xvi: 16,
+  xvii: 17,
+  xviii: 18,
+  xix: 19,
+  xx: 20,
+};
+
+const ordinalWords: Record<string, number> = {
+  first: 1,
+  second: 2,
+  third: 3,
+  fourth: 4,
+  fifth: 5,
+  sixth: 6,
+  seventh: 7,
+  eighth: 8,
+  ninth: 9,
+  tenth: 10,
+};
+
+const labelNoiseWords = new Set(['q', 'question', 'ques', 'no', 'part', 'subpart', 'section']);
+
+function letterOrdinal(value: string) {
+  let total = 0;
+  for (const char of value) {
+    total = total * 26 + (char.charCodeAt(0) - 96);
+  }
+  return total;
+}
+
+function normalizeQuestionLabel(label: unknown): SortToken[] {
+  const source = String(label ?? '').toLowerCase();
+  const spaced = source
+    .replace(/([a-z])(\d)/g, '$1 $2')
+    .replace(/(\d)([a-z])/g, '$1 $2')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+  if (!spaced) {
+    return [{ kind: 'text', value: '', raw: '' }];
+  }
+
+  return spaced
+    .split(/\s+/)
+    .filter((part) => !labelNoiseWords.has(part))
+    .map((part): SortToken => {
+      if (/^\d+$/.test(part)) {
+        return { kind: 'number', value: Number(part), raw: part };
+      }
+
+      if (ordinalWords[part] !== undefined) {
+        return { kind: 'number', value: ordinalWords[part], raw: part };
+      }
+
+      if (romanNumerals[part] !== undefined) {
+        return { kind: 'roman', value: romanNumerals[part], raw: part };
+      }
+
+      if (/^[a-z]+$/.test(part)) {
+        return { kind: 'letter', value: letterOrdinal(part), raw: part };
+      }
+
+      return { kind: 'text', value: part, raw: part };
+    });
+}
+
+const tokenRank: Record<SortToken['kind'], number> = {
+  number: 0,
+  letter: 1,
+  roman: 2,
+  text: 3,
+};
+
+function compareQuestionLabels(left: string, right: string) {
+  const leftTokens = normalizeQuestionLabel(left);
+  const rightTokens = normalizeQuestionLabel(right);
+  const maxLength = Math.max(leftTokens.length, rightTokens.length);
+
+  for (let index = 0; index < maxLength; index += 1) {
+    const leftToken = leftTokens[index];
+    const rightToken = rightTokens[index];
+
+    if (!leftToken) return -1;
+    if (!rightToken) return 1;
+
+    const leftRank = tokenRank[leftToken.kind];
+    const rightRank = tokenRank[rightToken.kind];
+    if (leftRank !== rightRank) return leftRank - rightRank;
+
+    if ('value' in leftToken && 'value' in rightToken && leftToken.value !== rightToken.value) {
+      if (typeof leftToken.value === 'number' && typeof rightToken.value === 'number') {
+        return leftToken.value - rightToken.value;
+      }
+
+      return String(leftToken.value).localeCompare(String(rightToken.value), undefined, {
+        numeric: true,
+        sensitivity: 'base',
+      });
+    }
+
+    const rawCompare = leftToken.raw.localeCompare(rightToken.raw, undefined, {
+      numeric: true,
+      sensitivity: 'base',
+    });
+    if (rawCompare !== 0) return rawCompare;
+  }
+
+  return String(left).localeCompare(String(right), undefined, {
+    numeric: true,
+    sensitivity: 'base',
+  });
+}
+
+function sortQuestionsByLabel(rows: QuestionRow[]) {
+  return [...rows].sort((left, right) => {
+    const labelCompare = compareQuestionLabels(left.question_label, right.question_label);
+    if (labelCompare !== 0) return labelCompare;
+    return left.id - right.id;
+  });
+}
+
 export const uploadQuestions = async (req: Request, res: Response) => {
   try {
     const { assignmentId } = req.params;
@@ -75,10 +226,12 @@ export const getQuestionsByAssignment = async (req: Request, res: Response) => {
 
     const result = await pool.query(query, [assignmentId, teacherId]);
 
+    const sortedRows = sortQuestionsByLabel(result.rows as QuestionRow[]);
+
     return res.status(200).json({
       message: 'Questions retrieved successfully',
       count: result.rowCount,
-      data: result.rows
+      data: sortedRows
     });
 
   } catch (error: any) {
