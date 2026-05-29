@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
-import { uploadSyllabus, getSyllabusGraph, querySyllabus, getPrerequisites } from '../controllers/syllabusController.js';
+import { uploadSyllabus, getSyllabusGraph, getSyllabusStatus, querySyllabus, getPrerequisites } from '../controllers/syllabusController.js';
 import { requireAccessToken } from '../common/middleware/jwt.middleware.js';
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -10,6 +10,9 @@ syllabusRouter.use(requireAccessToken);
 
 // Upload syllabus and trigger GraphRAG pipeline
 syllabusRouter.post('/syllabus/upload', upload.single('file'), uploadSyllabus);
+
+// Get syllabus ingestion status
+syllabusRouter.get('/syllabus/:syllabusId/status', getSyllabusStatus);
 
 // Get full graph for a syllabus
 syllabusRouter.get('/syllabus/:syllabusId/graph', getSyllabusGraph);

@@ -5,7 +5,7 @@ import traceback
 import pypdf
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 
 from api.service.Textract_service import parse_standard_file , textract_client
 from config.db import get_db_connection
@@ -361,8 +361,9 @@ from utils.graphrag_agent.pipeline import extract_text_from_file, run_ingestion_
 from utils.graphrag_agent.query import query_graphrag, get_full_graph, get_prerequisite_chain
 
 
-@app.post("/internal/agent/syllabus/upload")
+@app.post("/internal/agent/syllabus/upload", status_code=202)
 async def upload_syllabus(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     teacher_id: str = Form(...),
 ):
@@ -387,16 +388,57 @@ async def upload_syllabus(
                 syllabus_id = cur.fetchone()["id"]
                 conn.commit()
 
-        # Run pipeline
-        result = await run_ingestion_pipeline(syllabus_id, raw_text)
+        # Run ingestion after returning so upload latency is not tied to LLM/DB work.
+        background_tasks.add_task(process_syllabus_ingestion, syllabus_id, raw_text)
 
         return {
             "syllabus_id": syllabus_id,
-            "status": "completed",
-            "entity_count": result["entity_count"],
-            "relationship_count": result["relationship_count"],
+            "status": "processing",
+            "entity_count": 0,
+            "relationship_count": 0,
         }
 
+    except Exception as e:
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"{e.__class__.__name__}: {e}")
+
+
+async def process_syllabus_ingestion(syllabus_id: int, raw_text: str):
+    try:
+        await run_ingestion_pipeline(syllabus_id, raw_text)
+    except Exception:
+        print(traceback.format_exc())
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE public.syllabi SET status = 'failed' WHERE id = %s",
+                    (syllabus_id,)
+                )
+                conn.commit()
+
+
+@app.get("/internal/agent/syllabus/{syllabus_id}/status")
+async def get_syllabus_status(syllabus_id: int):
+    """Return ingestion status for a syllabus."""
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, status, entity_count, relationship_count
+                    FROM public.syllabi
+                    WHERE id = %s
+                    """,
+                    (syllabus_id,)
+                )
+                row = cur.fetchone()
+
+        if not row:
+            raise HTTPException(status_code=404, detail="Syllabus not found.")
+
+        return row
+    except HTTPException:
+        raise
     except Exception as e:
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"{e.__class__.__name__}: {e}")

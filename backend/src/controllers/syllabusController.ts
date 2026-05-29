@@ -1,7 +1,6 @@
 import { Request, Response } from 'express';
 import axios from 'axios';
 import FormData from 'form-data';
-import { pool } from '../lib/database.js';
 
 const FASTAPI_URL = 'http://localhost:8000';
 
@@ -30,8 +29,8 @@ export const uploadSyllabus = async (req: Request, res: Response) => {
       headers: { ...formData.getHeaders() },
     });
 
-    return res.status(200).json({
-      message: 'Syllabus processed successfully',
+    return res.status(202).json({
+      message: 'Syllabus upload accepted for processing',
       data: response.data
     });
 
@@ -39,6 +38,34 @@ export const uploadSyllabus = async (req: Request, res: Response) => {
     console.error('Error uploading syllabus:', error.message);
     return res.status(500).json({
       error: 'Failed to process syllabus',
+      details: error.response?.data || error.message
+    });
+  }
+};
+
+/**
+ * Get syllabus ingestion status
+ */
+export const getSyllabusStatus = async (req: Request, res: Response) => {
+  try {
+    const { syllabusId } = req.params;
+    const teacherId = req.authUser?.id;
+
+    if (!teacherId) {
+      return res.status(401).json({ error: 'Unauthorized: Missing teacher identity' });
+    }
+
+    const response = await axios.get(`${FASTAPI_URL}/internal/agent/syllabus/${syllabusId}/status`);
+
+    return res.status(200).json({
+      message: 'Syllabus status retrieved',
+      data: response.data
+    });
+
+  } catch (error: any) {
+    console.error('Error fetching syllabus status:', error.message);
+    return res.status(500).json({
+      error: 'Failed to fetch syllabus status',
       details: error.response?.data || error.message
     });
   }
@@ -117,6 +144,10 @@ export const getPrerequisites = async (req: Request, res: Response) => {
 
     if (!teacherId) {
       return res.status(401).json({ error: 'Unauthorized: Missing teacher identity' });
+    }
+
+    if (typeof topic !== 'string') {
+      return res.status(400).json({ error: 'topic is required' });
     }
 
     const response = await axios.get(

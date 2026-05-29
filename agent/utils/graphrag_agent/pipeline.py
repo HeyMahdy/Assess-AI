@@ -1,9 +1,12 @@
 import json
 import io
-import traceback
+import asyncio
+import os
+import time
 from typing import List, Dict, Any
 
 import pypdf
+from psycopg2.extras import execute_values
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -14,6 +17,9 @@ from .prompts import ENTITY_EXTRACTION_PROMPT, RELATIONSHIP_EXTRACTION_PROMPT
 # LLMs
 llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 embeddings_model = OpenAIEmbeddings(model="text-embedding-3-small")
+json_llm = llm.bind(response_format={"type": "json_object"})
+
+ENTITY_EXTRACTION_CONCURRENCY = int(os.getenv("GRAPHRAG_ENTITY_CONCURRENCY", "4"))
 
 # Text splitter — larger chunks = fewer LLM calls = faster processing
 text_splitter = RecursiveCharacterTextSplitter(
@@ -21,6 +27,20 @@ text_splitter = RecursiveCharacterTextSplitter(
     chunk_overlap=200,
     separators=["\n\n", "\n", ". ", " "]
 )
+
+
+class StageTimer:
+    def __init__(self, stage: str):
+        self.stage = stage
+        self.start = 0.0
+
+    def __enter__(self):
+        self.start = time.perf_counter()
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        elapsed = time.perf_counter() - self.start
+        print(f"[GraphRAG][timing] {self.stage}: {elapsed:.2f}s")
 
 
 def extract_text_from_file(contents: bytes, content_type: str) -> str:
@@ -61,25 +81,38 @@ def chunk_text(text: str) -> List[str]:
 async def extract_entities(chunks: List[str]) -> List[Dict[str, Any]]:
     """Use LLM to extract entities from each chunk, then deduplicate."""
     all_entities = {}
+    semaphore = asyncio.Semaphore(ENTITY_EXTRACTION_CONCURRENCY)
 
-    for chunk in chunks:
+    async def extract_chunk_entities(chunk: str) -> List[Dict[str, Any]]:
         messages = [
             SystemMessage(content=ENTITY_EXTRACTION_PROMPT),
             HumanMessage(content=f"Syllabus chunk:\n\n{chunk}")
         ]
 
-        json_llm = llm.bind(response_format={"type": "json_object"})
-        response = json_llm.invoke(messages)
+        async with semaphore:
+            response = await json_llm.ainvoke(messages)
 
         try:
             parsed = json.loads(response.content)
-            entities = parsed.get("entities", [])
-            for entity in entities:
-                name = entity.get("name", "").strip().lower()
-                if name and name not in all_entities:
-                    all_entities[name] = entity
-        except (json.JSONDecodeError, KeyError):
+            return parsed.get("entities", [])
+        except (json.JSONDecodeError, KeyError) as e:
+            print(f"[extract_entities] JSON parse error: {e}")
+            return []
+
+    chunk_results = await asyncio.gather(
+        *(extract_chunk_entities(chunk) for chunk in chunks),
+        return_exceptions=True
+    )
+
+    for result in chunk_results:
+        if isinstance(result, Exception):
+            print(f"[extract_entities] Chunk extraction error: {result}")
             continue
+
+        for entity in result:
+            name = entity.get("name", "").strip().lower()
+            if name and name not in all_entities:
+                all_entities[name] = entity
 
     return list(all_entities.values())
 
@@ -124,14 +157,13 @@ ONLY create relationships between entities in the list. Do NOT invent new entiti
         HumanMessage(content="Identify all relationships between these entities.")
     ]
 
-    json_llm = llm.bind(response_format={"type": "json_object"})
-    response = json_llm.invoke(messages)
+    response = await json_llm.ainvoke(messages)
 
     try:
         parsed = json.loads(response.content)
         relationships = parsed.get("relationships", [])
         # Filter: only keep relationships where both source and target exist
-        entity_names_lower = [n.lower() for n in entity_names]
+        entity_names_lower = {n.lower() for n in entity_names}
         valid = [
             r for r in relationships
             if r.get("source", "").lower() in entity_names_lower
@@ -157,39 +189,53 @@ async def store_entities(syllabus_id: int, entities: List[Dict]) -> Dict[str, in
     ]
     
     print(f"[store_entities] Generating {len(embed_texts)} embeddings in batch...")
-    all_embeddings = embeddings_model.embed_documents(embed_texts)
+    if hasattr(embeddings_model, "aembed_documents"):
+        all_embeddings = await embeddings_model.aembed_documents(embed_texts)
+    else:
+        all_embeddings = await asyncio.to_thread(embeddings_model.embed_documents, embed_texts)
     print(f"[store_entities] Embeddings generated.")
 
-    for i, entity in enumerate(entities):
-        embedding = all_embeddings[i]
+    rows = [
+        (
+            syllabus_id,
+            entity["name"],
+            entity.get("type", "topic"),
+            entity.get("description", ""),
+            entity.get("difficulty_level", "intermediate"),
+            entity.get("week_or_unit"),
+            str(all_embeddings[i]),
+        )
+        for i, entity in enumerate(entities)
+    ]
 
-        sql = """
-            INSERT INTO public.syllabus_entities (syllabus_id, name, entity_type, description, difficulty_level, week_or_unit, embedding)
-            VALUES (%s, %s, %s, %s, %s, %s, %s::vector)
-            ON CONFLICT (syllabus_id, name) DO UPDATE SET
-                description = EXCLUDED.description,
-                difficulty_level = EXCLUDED.difficulty_level,
-                embedding = EXCLUDED.embedding
-            RETURNING id;
-        """
+    sql = """
+        INSERT INTO public.syllabus_entities
+            (syllabus_id, name, entity_type, description, difficulty_level, week_or_unit, embedding)
+        VALUES %s
+        ON CONFLICT (syllabus_id, name) DO UPDATE SET
+            entity_type = EXCLUDED.entity_type,
+            description = EXCLUDED.description,
+            difficulty_level = EXCLUDED.difficulty_level,
+            week_or_unit = EXCLUDED.week_or_unit,
+            embedding = EXCLUDED.embedding
+        RETURNING id, name;
+    """
 
-        try:
-            with get_db_connection() as conn:
-                with conn.cursor() as cur:
-                    cur.execute(sql, (
-                        syllabus_id,
-                        entity["name"],
-                        entity.get("type", "topic"),
-                        entity.get("description", ""),
-                        entity.get("difficulty_level", "intermediate"),
-                        entity.get("week_or_unit"),
-                        str(embedding)
-                    ))
-                    row = cur.fetchone()
-                    entity_name_to_id[entity["name"].lower()] = row["id"]
-                    conn.commit()
-        except Exception as e:
-            print(f"[store_entities] Error storing {entity['name']}: {e}")
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                returned = execute_values(
+                    cur,
+                    sql,
+                    rows,
+                    template="(%s, %s, %s, %s, %s, %s, %s::vector)",
+                    page_size=max(len(rows), 1),
+                    fetch=True,
+                )
+                entity_name_to_id = {row["name"].lower(): row["id"] for row in returned}
+                conn.commit()
+    except Exception as e:
+        print(f"[store_entities] Error storing entities: {e}")
 
     return entity_name_to_id
 
@@ -198,34 +244,50 @@ async def store_relationships(syllabus_id: int, relationships: List[Dict], entit
     """Store relationships in PostgreSQL."""
     stored = 0
 
+    rows = []
+    seen = set()
+
     for rel in relationships:
-        source_id = entity_name_to_id.get(rel["source"].lower())
-        target_id = entity_name_to_id.get(rel["target"].lower())
+        source = rel.get("source", "").lower()
+        target = rel.get("target", "").lower()
+        source_id = entity_name_to_id.get(source)
+        target_id = entity_name_to_id.get(target)
 
         if not source_id or not target_id:
             continue
 
-        sql = """
-            INSERT INTO public.syllabus_relationships (syllabus_id, source_entity_id, target_entity_id, relationship_type, strength, reason)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            ON CONFLICT DO NOTHING;
-        """
+        relationship_type = rel.get("relationship_type", "RELATED_TO")
+        key = (source_id, target_id, relationship_type)
+        if key in seen:
+            continue
+        seen.add(key)
 
-        try:
-            with get_db_connection() as conn:
-                with conn.cursor() as cur:
-                    cur.execute(sql, (
-                        syllabus_id,
-                        source_id,
-                        target_id,
-                        rel.get("relationship_type", "RELATED_TO"),
-                        rel.get("strength", 3),
-                        rel.get("reason", "")
-                    ))
-                    conn.commit()
-                    stored += 1
-        except Exception as e:
-            print(f"[store_relationships] Error: {e}")
+        rows.append((
+            syllabus_id,
+            source_id,
+            target_id,
+            relationship_type,
+            rel.get("strength", 3),
+            rel.get("reason", "")
+        ))
+
+    if not rows:
+        return 0
+
+    sql = """
+        INSERT INTO public.syllabus_relationships
+            (syllabus_id, source_entity_id, target_entity_id, relationship_type, strength, reason)
+        VALUES %s;
+    """
+
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                execute_values(cur, sql, rows, page_size=max(len(rows), 1))
+                conn.commit()
+                stored = len(rows)
+    except Exception as e:
+        print(f"[store_relationships] Error: {e}")
 
     return stored
 
@@ -235,23 +297,28 @@ async def run_ingestion_pipeline(syllabus_id: int, raw_text: str) -> Dict[str, A
     print(f"[GraphRAG] Starting ingestion for syllabus {syllabus_id}")
 
     # Step 1: Chunk
-    chunks = chunk_text(raw_text)
+    with StageTimer("chunk_text"):
+        chunks = chunk_text(raw_text)
     print(f"[GraphRAG] Created {len(chunks)} chunks")
 
     # Step 2: Extract entities
-    entities = await extract_entities(chunks)
+    with StageTimer("extract_entities"):
+        entities = await extract_entities(chunks)
     print(f"[GraphRAG] Extracted {len(entities)} entities")
 
     # Step 3: Extract relationships
-    relationships = await extract_relationships(entities)
+    with StageTimer("extract_relationships"):
+        relationships = await extract_relationships(entities)
     print(f"[GraphRAG] Extracted {len(relationships)} relationships")
 
     # Step 4: Store entities with embeddings
-    entity_name_to_id = await store_entities(syllabus_id, entities)
+    with StageTimer("store_entities"):
+        entity_name_to_id = await store_entities(syllabus_id, entities)
     print(f"[GraphRAG] Stored {len(entity_name_to_id)} entities in DB")
 
     # Step 5: Store relationships
-    rel_count = await store_relationships(syllabus_id, relationships, entity_name_to_id)
+    with StageTimer("store_relationships"):
+        rel_count = await store_relationships(syllabus_id, relationships, entity_name_to_id)
     print(f"[GraphRAG] Stored {rel_count} relationships in DB")
 
     # Update syllabus status
