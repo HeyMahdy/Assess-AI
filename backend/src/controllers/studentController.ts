@@ -1,11 +1,6 @@
 import { Request, Response } from 'express';
 import { pool } from '../lib/database.js';
 
-const formatStudentResponse = (student: any) => ({
-  ...student,
-  studentId: student.student_id,
-});
-
 /**
  * Add a new student for a teacher
  */
@@ -34,7 +29,7 @@ export const addStudent = async (req: Request, res: Response) => {
 
     return res.status(201).json({
       message: 'Student added successfully',
-      data: formatStudentResponse(result.rows[0])
+      data: result.rows[0]
     });
 
   } catch (error: any) {
@@ -78,7 +73,7 @@ export const getStudentsByTeacher = async (req: Request, res: Response) => {
     return res.status(200).json({
       message: 'Students retrieved successfully',
       count: result.rowCount ?? (result.rows ? result.rows.length : 0),
-      data: result.rows.map(formatStudentResponse)
+      data: result.rows
     });
 
   } catch (error: any) {
@@ -133,7 +128,7 @@ export const searchStudents = async (req: Request, res: Response) => {
     return res.status(200).json({
       message: 'Students retrieved successfully',
       count: result.rowCount ?? result.rows.length,
-      data: result.rows.map(formatStudentResponse)
+      data: result.rows
     });
 
   } catch (error: any) {
@@ -174,7 +169,7 @@ export const getStudentById = async (req: Request, res: Response) => {
 
     return res.status(200).json({
       message: 'Student retrieved successfully',
-      data: formatStudentResponse(result.rows[0])
+      data: result.rows[0]
     });
 
   } catch (error: any) {
@@ -227,7 +222,7 @@ export const updateStudent = async (req: Request, res: Response) => {
 
       return res.status(200).json({
         message: 'No modifications requested. Student remained unchanged.',
-        data: formatStudentResponse(fallbackResult.rows[0])
+        data: fallbackResult.rows[0]
       });
     }
 
@@ -254,7 +249,7 @@ export const updateStudent = async (req: Request, res: Response) => {
 
     return res.status(200).json({
       message: 'Student updated successfully',
-      data: formatStudentResponse(result.rows[0])
+      data: result.rows[0]
     });
 
   } catch (error: any) {
@@ -295,7 +290,7 @@ export const deleteStudent = async (req: Request, res: Response) => {
 
     return res.status(200).json({
       message: 'Student deleted successfully',
-      data: formatStudentResponse(result.rows[0])
+      data: result.rows[0]
     });
 
   } catch (error: any) {
