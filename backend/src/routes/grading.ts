@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { startGrading, getGradingResults } from '../controllers/gradingController.js';
+import { startGrading, getGradingResults, updateGradingResult } from '../controllers/gradingController.js';
 import { requireAccessToken } from '../common/middleware/jwt.middleware.js';
 
 export const gradingRouter = Router();
@@ -11,3 +11,6 @@ gradingRouter.post('/assignments/:assignmentId/students/:studentId/grade', start
 
 // Get grading results for a student on an assignment
 gradingRouter.get('/assignments/:assignmentId/students/:studentId/scores', getGradingResults);
+
+// Update a grading result after teacher review
+gradingRouter.patch('/assignments/:assignmentId/students/:studentId/scores/:scoreId', updateGradingResult);

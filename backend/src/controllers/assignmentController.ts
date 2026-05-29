@@ -26,6 +26,38 @@ export const createAssignment = async (req: Request, res: Response) => {
   }
 };
 
+// GET /assignments
+export const getAssignments = async (req: Request, res: Response) => {
+  const teacherId = req.authUser?.id;
+
+  if (!teacherId) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+
+  try {
+    const query = `
+      SELECT id as assignment_id, title, subject, total_marks, created_at
+      FROM assignments
+      WHERE teacher_id = $1
+      ORDER BY created_at DESC, id DESC
+    `;
+
+    const result = await pool.query(query, [teacherId]);
+
+    return res.status(200).json({
+      message: 'Assignments retrieved successfully',
+      count: result.rowCount ?? result.rows.length,
+      data: result.rows
+    });
+  } catch (err: any) {
+    console.error('Error fetching assignments:', err);
+    return res.status(500).json({
+      error: 'Database error while fetching assignments',
+      details: err.message
+    });
+  }
+};
+
 // GET /assignments/:assignmentId
 export const getAssignmentById = async (req: Request, res: Response) => {
   const { assignmentId } = req.params;

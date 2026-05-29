@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { 
   createAssignment, 
+  getAssignments,
   getAssignmentById, 
   updateAssignment
   ,deleteAssignment
@@ -13,6 +14,9 @@ assignmentRouter.use(requireAccessToken);
 
 // POST /assignments
 assignmentRouter.post('/', createAssignment);
+
+// GET /assignments
+assignmentRouter.get('/', getAssignments);
 
 // GET /assignments/:assignmentId
 assignmentRouter.get('/:assignmentId', getAssignmentById);

@@ -17,6 +17,41 @@ const errorSchema = {
 
 export const assignmentPaths = {
   '/assignments': {
+    get: {
+      tags: ['Assignments'],
+      summary: 'List assignments',
+      description: 'Retrieves all assignments owned by the authenticated teacher.',
+      security: [{ bearerAuth: [] }],
+      responses: {
+        '200': {
+          description: 'Assignments retrieved successfully',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  message: { type: 'string' },
+                  count: { type: 'integer' },
+                  data: {
+                    type: 'array',
+                    items: assignmentSchema,
+                  },
+                },
+                required: ['message', 'count', 'data'],
+              },
+            },
+          },
+        },
+        '401': {
+          description: 'Unauthorized',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        '500': {
+          description: 'Database error',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    },
     post: {
       tags: ['Assignments'],
       summary: 'Create assignment',
