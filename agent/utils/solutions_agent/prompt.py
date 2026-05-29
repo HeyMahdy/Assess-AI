@@ -15,6 +15,10 @@ ABSOLUTE RULES
 8. MATHEMATICAL NOTATION. Wrap ALL math in LaTeX dollar signs ($...$). Transcribe exactly as written — do not simplify or reformat.
 9. THEREFORE SYMBOL. The "∴" symbol transcribes as $\\therefore$.
 10. VERIFICATION. Count how many distinct sub-part solutions you can physically SEE. Your output array must have EXACTLY that many entries.
+11. DESCRIPTIVE ANSWERS ARE SOLUTIONS. Definition, explanation, distinction, and principle-based answers are valid solutions even when they contain no equations, calculations, or final numeric answer.
+12. DO NOT REQUIRE "SOLUTION:" FOR EVERY PART. If a labelled answer such as "1(a)", "3(a)", or "3(c)" is followed by prose, bullet points, definitions, examples, or explanatory sentences, extract that text as the solution for that label.
+13. QUESTION-TEXT FILTER FOR PROSE PARTS. For descriptive parts, skip command text such as "Define...", "State...", "Explain...", or "Distinguish...". Keep the answer content that follows, including definitions, conditions, comparisons, examples, and explanatory paragraphs.
+14. NEVER SKIP A VISIBLE LABEL JUST BECAUSE IT IS THEORY. If the visible response answers a conceptual question, create an entry using that exact label.
 
 ══════════════════════════════════════════════
 MATHEMATICAL SYMBOL REFERENCE
@@ -92,6 +96,60 @@ KEY DECISIONS IN THE EXAMPLE:
 - Every equation line is its own \\n\\n-separated step.
 - The ∴ conclusion sentence is the final line of each entry.
 - Label format matches the question label system exactly: "2(b)(i)" and "2(b)(ii)".
+
+══════════════════════════════════════════════
+DESCRIPTIVE / DEFINITION ANSWER EXAMPLE
+══════════════════════════════════════════════
+
+IMAGE SHOWS:
+
+  1. (a) Define Simple Harmonic Motion (SHM) and state the two essential
+         conditions for a system to execute SHM.
+
+  Answer:
+  1(a) Simple harmonic motion is a periodic motion in which acceleration is
+       directly proportional to displacement from the mean position and is
+       always directed towards the mean position.
+       Conditions:
+       i) Restoring force is proportional to displacement.
+       ii) Restoring force is directed opposite to displacement.
+
+  3. (a) Distinguish between transverse and longitudinal waves, giving one
+         example of each.
+
+  3(a) In transverse waves, particles vibrate perpendicular to the direction of
+       wave propagation. Example: waves on a string.
+       In longitudinal waves, particles vibrate parallel to the direction of
+       wave propagation. Example: sound waves in air.
+
+  3(c) The principle of superposition states that when two or more waves meet
+       at a point, the resultant displacement is equal to the vector sum of the
+       individual displacements produced by each wave.
+
+CORRECT JSON OUTPUT:
+
+{
+  "solutions": [
+    {
+      "question_label": "1(a)",
+      "solution_text": "Simple harmonic motion is a periodic motion in which acceleration is directly proportional to displacement from the mean position and is always directed towards the mean position.\\n\\nConditions:\\n\\ni) Restoring force is proportional to displacement.\\n\\nii) Restoring force is directed opposite to displacement."
+    },
+    {
+      "question_label": "3(a)",
+      "solution_text": "In transverse waves, particles vibrate perpendicular to the direction of wave propagation. Example: waves on a string.\\n\\nIn longitudinal waves, particles vibrate parallel to the direction of wave propagation. Example: sound waves in air."
+    },
+    {
+      "question_label": "3(c)",
+      "solution_text": "The principle of superposition states that when two or more waves meet at a point, the resultant displacement is equal to the vector sum of the individual displacements produced by each wave."
+    }
+  ]
+}
+
+KEY DECISIONS IN THE DESCRIPTIVE EXAMPLE:
+- The prose definition for "1(a)" was extracted even though there was no calculation.
+- The comparison answer for "3(a)" was extracted because it answers "Distinguish".
+- The principle statement for "3(c)" was extracted because it is a valid theory solution.
+- The question prompts were skipped; only the answer content was saved.
 
 ══════════════════════════════════════════════
 OUTPUT FORMAT

@@ -51,5 +51,7 @@ If the JSON contains a "rubrics" array (e.g., {{"rubrics": [...]}}):
 CRITICAL INSTRUCTIONS:
 - Do not modify or summarize the data.
 - You must call the tool EXACTLY once for EVERY SINGLE ITEM in the provided JSON array. Do not stop until the array is fully processed.
+- If the `insert_rubric` tool returns a duplicate/unique-constraint error for a question_label, treat that rubric as already saved. Do NOT call `insert_rubric` again for that same question_label; skip it and continue saving the remaining rubric items.
+- Duplicate errors are non-fatal. Only stop after every non-duplicate item has been attempted once and every duplicate item has been skipped after its first failed insert.
 - Once finished, reply with a brief confirmation message.
 """
