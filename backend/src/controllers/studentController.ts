@@ -6,25 +6,26 @@ import { pool } from '../lib/database.js';
  */
 export const addStudent = async (req: Request, res: Response) => {
   try {
-    const { id, name } = req.body;
+    const { id, student_id, name } = req.body;
+    const studentId = student_id ?? id;
     const teacherId = req.authUser?.id;
 
     if (!teacherId) {
       return res.status(401).json({ error: 'Unauthorized: Missing teacher identity' });
     }
 
-    if (!id || !name) {
+    if (!studentId || !name) {
       return res.status(400).json({ error: 'Student ID and name are required' });
     }
 
     // Insert new student
     const query = `
-      INSERT INTO public.students (teacher_id, id, name)
+      INSERT INTO public.students (teacher_id, student_id, name)
       VALUES ($1, $2, $3)
-      RETURNING teacher_id, id, name, created_at;
+      RETURNING teacher_id, id, student_id, name, created_at;
     `;
 
-    const result = await pool.query(query, [teacherId, id, name]);
+    const result = await pool.query(query, [teacherId, studentId, name]);
 
     return res.status(201).json({
       message: 'Student added successfully',
@@ -61,7 +62,7 @@ export const getStudentsByTeacher = async (req: Request, res: Response) => {
 
     // Query to fetch all students for this teacher
     const query = `
-      SELECT teacher_id, id, name, created_at 
+      SELECT teacher_id, id, student_id, name, created_at 
       FROM public.students 
       WHERE teacher_id = $1
       ORDER BY name ASC;
@@ -85,6 +86,61 @@ export const getStudentsByTeacher = async (req: Request, res: Response) => {
 };
 
 /**
+ * Search students by student ID and/or name for a teacher
+ */
+export const searchStudents = async (req: Request, res: Response) => {
+  try {
+    const teacherId = req.authUser?.id;
+    const studentId = typeof req.query['student_id'] === 'string' ? req.query['student_id'].trim() : '';
+    const name = typeof req.query['name'] === 'string' ? req.query['name'].trim() : '';
+
+    if (!teacherId) {
+      return res.status(401).json({ error: 'Unauthorized: Missing teacher identity' });
+    }
+
+    if (!studentId && !name) {
+      return res.status(400).json({ error: 'student_id or name query parameter is required' });
+    }
+
+    const filters: string[] = ['teacher_id = $1'];
+    const queryValues: any[] = [teacherId];
+    let paramIndex = 2;
+
+    if (studentId) {
+      filters.push(`student_id ILIKE $${paramIndex++}`);
+      queryValues.push(`%${studentId}%`);
+    }
+
+    if (name) {
+      filters.push(`name ILIKE $${paramIndex++}`);
+      queryValues.push(`%${name}%`);
+    }
+
+    const query = `
+      SELECT teacher_id, id, student_id, name, created_at 
+      FROM public.students 
+      WHERE ${filters.join(' AND ')}
+      ORDER BY name ASC;
+    `;
+
+    const result = await pool.query(query, queryValues);
+
+    return res.status(200).json({
+      message: 'Students retrieved successfully',
+      count: result.rowCount ?? result.rows.length,
+      data: result.rows
+    });
+
+  } catch (error: any) {
+    console.error('Error searching students:', error.message);
+    return res.status(500).json({ 
+      error: 'Database error', 
+      details: error.message 
+    });
+  }
+};
+
+/**
  * Get a specific student by ID
  */
 export const getStudentById = async (req: Request, res: Response) => {
@@ -98,7 +154,7 @@ export const getStudentById = async (req: Request, res: Response) => {
 
     // Query to fetch specific student
     const query = `
-      SELECT teacher_id, id, name, created_at 
+      SELECT teacher_id, id, student_id, name, created_at 
       FROM public.students 
       WHERE teacher_id = $1 AND id = $2;
     `;
@@ -131,17 +187,30 @@ export const getStudentById = async (req: Request, res: Response) => {
 export const updateStudent = async (req: Request, res: Response) => {
   try {
     const { studentId } = req.params;
-    const { name } = req.body;
+    const { name, student_id } = req.body;
     const teacherId = req.authUser?.id;
 
     if (!teacherId) {
       return res.status(401).json({ error: 'Unauthorized: Missing teacher identity' });
     }
 
-    // Validate that name is provided and not empty
-    if (!name || String(name).trim() === '') {
+    const setFields: string[] = [];
+    const queryValues: any[] = [];
+    let paramIndex = 1;
+
+    if (name !== undefined && name !== null && String(name).trim() !== '') {
+      setFields.push('name = $' + paramIndex++);
+      queryValues.push(name);
+    }
+
+    if (student_id !== undefined && student_id !== null && String(student_id).trim() !== '') {
+      setFields.push('student_id = $' + paramIndex++);
+      queryValues.push(student_id);
+    }
+
+    if (setFields.length === 0) {
       const existingQuery = `
-        SELECT teacher_id, id, name, created_at 
+        SELECT teacher_id, id, student_id, name, created_at 
         FROM public.students 
         WHERE teacher_id = $1 AND id = $2;
       `;
@@ -157,15 +226,20 @@ export const updateStudent = async (req: Request, res: Response) => {
       });
     }
 
-    // Update student name
+    queryValues.push(teacherId);
+    const teacherIdParam = '$' + paramIndex++;
+
+    queryValues.push(studentId);
+    const studentUuidParam = '$' + paramIndex++;
+
     const query = `
       UPDATE public.students 
-      SET name = $1
-      WHERE teacher_id = $2 AND id = $3
-      RETURNING teacher_id, id, name, created_at;
+      SET ${setFields.join(', ')}
+      WHERE teacher_id = ${teacherIdParam} AND id = ${studentUuidParam}
+      RETURNING teacher_id, id, student_id, name, created_at;
     `;
 
-    const result = await pool.query(query, [name, teacherId, studentId]);
+    const result = await pool.query(query, queryValues);
 
     if (!result.rows || result.rows.length === 0) {
       return res.status(404).json({ 
@@ -203,7 +277,7 @@ export const deleteStudent = async (req: Request, res: Response) => {
     const query = `
       DELETE FROM public.students 
       WHERE teacher_id = $1 AND id = $2
-      RETURNING teacher_id, id, name;
+      RETURNING teacher_id, id, student_id, name;
     `;
 
     const result = await pool.query(query, [teacherId, studentId]);

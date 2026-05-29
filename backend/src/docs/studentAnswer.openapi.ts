@@ -27,7 +27,7 @@ export const studentAnswerPaths: Record<string, any> = {
       security: [{ bearerAuth: [] }],
       parameters: [
         { name: 'assignmentId', in: 'path', required: true, schema: { type: 'string' } },
-        { name: 'studentId', in: 'path', required: true, schema: { type: 'string' } },
+        { name: 'studentId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
       ],
       requestBody: {
         required: true,
@@ -85,7 +85,7 @@ export const studentAnswerPaths: Record<string, any> = {
       security: [{ bearerAuth: [] }],
       parameters: [
         { name: 'assignmentId', in: 'path', required: true, schema: { type: 'string' } },
-        { name: 'studentId', in: 'path', required: true, schema: { type: 'string' } },
+        { name: 'studentId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
       ],
       responses: {
         '200': {

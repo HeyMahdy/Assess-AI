@@ -2,11 +2,12 @@ const studentSchema = {
   type: 'object',
   properties: {
     teacher_id: { type: 'string', format: 'uuid' },
-    id: { type: 'string' },
+    id: { type: 'string', format: 'uuid' },
+    student_id: { type: 'string' },
     name: { type: 'string' },
     created_at: { type: 'string', format: 'date-time' },
   },
-  required: ['teacher_id', 'id', 'name'],
+  required: ['teacher_id', 'id', 'student_id', 'name'],
 } as const;
 
 const studentErrorSchema = {
@@ -31,11 +32,11 @@ export const studentPaths: Record<string, any> = {
           'application/json': {
             schema: {
               type: 'object',
-              required: ['id', 'name'],
+              required: ['student_id', 'name'],
               properties: {
-                id: { 
+                student_id: { 
                   type: 'string',
-                  description: 'Unique student identifier (e.g., student ID number)'
+                  description: 'Teacher-facing student identifier (e.g., student ID number)'
                 },
                 name: { 
                   type: 'string',
@@ -116,6 +117,63 @@ export const studentPaths: Record<string, any> = {
       },
     },
   },
+  '/students/search': {
+    get: {
+      tags: ['Students'],
+      summary: 'Search students by ID or name',
+      description: 'Searches students belonging to the authenticated teacher using case-insensitive partial matches on student_id and/or name.',
+      security: [{ bearerAuth: [] }],
+      parameters: [
+        {
+          name: 'student_id',
+          in: 'query',
+          required: false,
+          schema: { type: 'string' },
+          description: 'Partial or full teacher-facing student identifier',
+        },
+        {
+          name: 'name',
+          in: 'query',
+          required: false,
+          schema: { type: 'string' },
+          description: 'Partial or full student name',
+        },
+      ],
+      responses: {
+        '200': {
+          description: 'Students retrieved successfully',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  message: { type: 'string' },
+                  count: { type: 'integer' },
+                  data: {
+                    type: 'array',
+                    items: studentSchema,
+                  },
+                },
+                required: ['message', 'count', 'data'],
+              },
+            },
+          },
+        },
+        '400': {
+          description: 'Bad Request: Missing search query',
+          content: { 'application/json': { schema: studentErrorSchema } },
+        },
+        '401': {
+          description: 'Unauthorized: Missing teacher identity',
+          content: { 'application/json': { schema: studentErrorSchema } },
+        },
+        '500': {
+          description: 'Internal Server Error: Database error',
+          content: { 'application/json': { schema: studentErrorSchema } },
+        },
+      },
+    },
+  },
   '/students/{studentId}': {
     get: {
       tags: ['Students'],
@@ -127,8 +185,8 @@ export const studentPaths: Record<string, any> = {
           name: 'studentId',
           in: 'path',
           required: true,
-          schema: { type: 'string' },
-          description: 'The unique student identifier',
+          schema: { type: 'string', format: 'uuid' },
+          description: 'The student UUID primary key',
         },
       ],
       responses: {
@@ -164,15 +222,15 @@ export const studentPaths: Record<string, any> = {
     patch: {
       tags: ['Students'],
       summary: 'Update a student\'s information',
-      description: 'Updates the name of a specific student belonging to the authenticated teacher.',
+      description: 'Updates a specific student belonging to the authenticated teacher.',
       security: [{ bearerAuth: [] }],
       parameters: [
         {
           name: 'studentId',
           in: 'path',
           required: true,
-          schema: { type: 'string' },
-          description: 'The unique student identifier',
+          schema: { type: 'string', format: 'uuid' },
+          description: 'The student UUID primary key',
         },
       ],
       requestBody: {
@@ -182,6 +240,10 @@ export const studentPaths: Record<string, any> = {
             schema: {
               type: 'object',
               properties: {
+                student_id: { 
+                  type: 'string',
+                  description: 'Updated teacher-facing student identifier'
+                },
                 name: { 
                   type: 'string',
                   description: 'Updated full name of the student'
@@ -231,8 +293,8 @@ export const studentPaths: Record<string, any> = {
           name: 'studentId',
           in: 'path',
           required: true,
-          schema: { type: 'string' },
-          description: 'The unique student identifier',
+          schema: { type: 'string', format: 'uuid' },
+          description: 'The student UUID primary key',
         },
       ],
       responses: {

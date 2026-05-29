@@ -31,7 +31,7 @@ export const gradingPaths: Record<string, any> = {
       security: [{ bearerAuth: [] }],
       parameters: [
         { name: 'assignmentId', in: 'path', required: true, schema: { type: 'string' } },
-        { name: 'studentId', in: 'path', required: true, schema: { type: 'string' } },
+        { name: 'studentId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
       ],
       responses: {
         '200': {
@@ -75,7 +75,7 @@ export const gradingPaths: Record<string, any> = {
       security: [{ bearerAuth: [] }],
       parameters: [
         { name: 'assignmentId', in: 'path', required: true, schema: { type: 'string' } },
-        { name: 'studentId', in: 'path', required: true, schema: { type: 'string' } },
+        { name: 'studentId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
       ],
       responses: {
         '200': {
@@ -125,7 +125,7 @@ export const gradingPaths: Record<string, any> = {
       security: [{ bearerAuth: [] }],
       parameters: [
         { name: 'assignmentId', in: 'path', required: true, schema: { type: 'string' } },
-        { name: 'studentId', in: 'path', required: true, schema: { type: 'string' } },
+        { name: 'studentId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
         { name: 'scoreId', in: 'path', required: true, schema: { type: 'string' } },
       ],
       requestBody: {

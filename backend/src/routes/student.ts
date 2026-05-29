@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { 
   addStudent, 
   getStudentsByTeacher, 
+  searchStudents,
   getStudentById, 
   updateStudent, 
   deleteStudent 
@@ -18,6 +19,9 @@ studentRouter.post('/students', addStudent);
 
 // Get all students for the authenticated teacher
 studentRouter.get('/students', getStudentsByTeacher);
+
+// Search students by student ID and/or name
+studentRouter.get('/students/search', searchStudents);
 
 // Get a specific student by ID
 studentRouter.get('/students/:studentId', getStudentById);
