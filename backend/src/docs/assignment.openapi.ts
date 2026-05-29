@@ -129,6 +129,75 @@ export const assignmentPaths = {
       },
     },
   },
+  '/assignments/search': {
+    get: {
+      tags: ['Assignments'],
+      summary: 'Search assignments by title',
+      description: 'Searches assignments owned by the authenticated teacher using a case-insensitive partial title match.',
+      security: [{ bearerAuth: [] }],
+      parameters: [
+        {
+          name: 'title',
+          in: 'query',
+          required: true,
+          schema: { type: 'string' },
+          description: 'Partial or full assignment title to search for',
+          example: 'Midterm',
+        },
+      ],
+      responses: {
+        '200': {
+          description: 'Assignments retrieved successfully',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  message: { type: 'string' },
+                  count: { type: 'integer' },
+                  data: {
+                    type: 'array',
+                    items: assignmentSchema,
+                  },
+                },
+                required: ['message', 'count', 'data'],
+              },
+              example: {
+                message: 'Assignments retrieved successfully',
+                count: 1,
+                data: [
+                  {
+                    assignment_id: 12,
+                    title: 'Midterm Exam',
+                    subject: 'Computer Science',
+                    total_marks: 50,
+                    created_at: '2026-05-29T16:48:49.693Z',
+                  },
+                ],
+              },
+            },
+          },
+        },
+        '400': {
+          description: 'Missing title query parameter',
+          content: {
+            'application/json': {
+              schema: errorSchema,
+              example: { error: 'title query parameter is required' },
+            },
+          },
+        },
+        '401': {
+          description: 'Unauthorized',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        '500': {
+          description: 'Database error',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    },
+  },
   '/assignments/{assignmentId}': {
     get: {
       tags: ['Assignments'],

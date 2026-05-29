@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { 
   createAssignment, 
   getAssignments,
+  searchAssignmentsByTitle,
   getAssignmentById, 
   updateAssignment
   ,deleteAssignment
@@ -17,6 +18,9 @@ assignmentRouter.post('/', createAssignment);
 
 // GET /assignments
 assignmentRouter.get('/', getAssignments);
+
+// GET /assignments/search?title=...
+assignmentRouter.get('/search', searchAssignmentsByTitle);
 
 // GET /assignments/:assignmentId
 assignmentRouter.get('/:assignmentId', getAssignmentById);

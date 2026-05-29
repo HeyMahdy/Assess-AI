@@ -58,6 +58,43 @@ export const getAssignments = async (req: Request, res: Response) => {
   }
 };
 
+// GET /assignments/search?title=...
+export const searchAssignmentsByTitle = async (req: Request, res: Response) => {
+  const teacherId = req.authUser?.id;
+  const title = typeof req.query['title'] === 'string' ? req.query['title'].trim() : '';
+
+  if (!teacherId) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+
+  if (!title) {
+    return res.status(400).json({ error: 'title query parameter is required' });
+  }
+
+  try {
+    const query = `
+      SELECT id as assignment_id, title, subject, total_marks, created_at
+      FROM assignments
+      WHERE teacher_id = $1 AND title ILIKE $2
+      ORDER BY created_at DESC, id DESC
+    `;
+
+    const result = await pool.query(query, [teacherId, `%${title}%`]);
+
+    return res.status(200).json({
+      message: 'Assignments retrieved successfully',
+      count: result.rowCount ?? result.rows.length,
+      data: result.rows
+    });
+  } catch (err: any) {
+    console.error('Error searching assignments:', err);
+    return res.status(500).json({
+      error: 'Database error while searching assignments',
+      details: err.message
+    });
+  }
+};
+
 // GET /assignments/:assignmentId
 export const getAssignmentById = async (req: Request, res: Response) => {
   const { assignmentId } = req.params;
