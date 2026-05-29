@@ -4,6 +4,7 @@ const studentSchema = {
     teacher_id: { type: 'string', format: 'uuid' },
     id: { type: 'string', format: 'uuid' },
     student_id: { type: 'string' },
+    studentId: { type: 'string' },
     name: { type: 'string' },
     created_at: { type: 'string', format: 'date-time' },
   },
