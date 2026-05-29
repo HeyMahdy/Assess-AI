@@ -205,5 +205,63 @@ export const questionPaths = {
         },
       },
     },
+    delete: {
+      tags: ['Questions'],
+      summary: 'Delete a question by its distinct ID',
+      description: 'Deletes a specific question row owned by the authenticated teacher.',
+      security: [{ bearerAuth: [] }],
+      parameters: [
+        {
+          name: 'questionId',
+          in: 'path',
+          required: true,
+          schema: { type: 'integer' },
+          description: 'The unique integer database key identifier of the question to delete',
+        },
+      ],
+      responses: {
+        '200': {
+          description: 'Question deleted successfully',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  message: { type: 'string' },
+                  data: {
+                    type: 'object',
+                    properties: {
+                      id: { type: 'integer' },
+                      question_label: { type: 'string' },
+                    },
+                    required: ['id', 'question_label'],
+                  },
+                },
+                required: ['message', 'data'],
+              },
+              example: {
+                message: 'Question deleted successfully',
+                data: {
+                  id: 1,
+                  question_label: '1a',
+                },
+              },
+            },
+          },
+        },
+        '401': {
+          description: 'Unauthorized: Authentication validation token missing or expired',
+          content: { 'application/json': { schema: questionErrorSchema } },
+        },
+        '404': {
+          description: 'Not Found: Target question does not exist or access privileges deny deletion',
+          content: { 'application/json': { schema: questionErrorSchema } },
+        },
+        '500': {
+          description: 'Internal Server Error: Database pipeline connection crash',
+          content: { 'application/json': { schema: questionErrorSchema } },
+        },
+      },
+    },
   },
 } as const;

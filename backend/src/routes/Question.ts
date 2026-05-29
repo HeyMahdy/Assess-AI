@@ -2,7 +2,7 @@
 
 import { Router } from 'express';
 import multer from 'multer';
-import { uploadQuestions,getQuestionsByAssignment,updateQuestionById } from '../controllers/questionController.js';
+import { uploadQuestions,getQuestionsByAssignment,updateQuestionById,deleteQuestionById } from '../controllers/questionController.js';
 import { requireAccessToken } from '../common/middleware/jwt.middleware.js';
 
 
@@ -20,3 +20,4 @@ questionRouter.post(
 
 questionRouter.get('/assignments/:assignmentId/questions',getQuestionsByAssignment)
 questionRouter.patch('/assignments/:questionId/questions',updateQuestionById)
+questionRouter.delete('/assignments/:questionId/questions',deleteQuestionById)

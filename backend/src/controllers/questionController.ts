@@ -183,3 +183,40 @@ export const updateQuestionById = async (req: Request, res: Response) => {
     });
   }
 };
+
+export const deleteQuestionById = async (req: Request, res: Response) => {
+  try {
+    const { questionId } = req.params;
+    const teacherId = req.authUser?.id;
+
+    if (!teacherId) {
+      return res.status(401).json({ error: 'Unauthorized: Missing teacher identity' });
+    }
+
+    const query = `
+      DELETE FROM public.questions
+      WHERE id = $1 AND teacher_id = $2
+      RETURNING id, question_label;
+    `;
+
+    const result = await pool.query(query, [questionId, teacherId]);
+
+    if (!result.rows || result.rows.length === 0) {
+      return res.status(404).json({
+        error: 'Question not found or you are not authorized to delete it'
+      });
+    }
+
+    return res.status(200).json({
+      message: 'Question deleted successfully',
+      data: result.rows[0]
+    });
+
+  } catch (error: any) {
+    console.error('Error deleting question by ID:', error.message);
+    return res.status(500).json({
+      error: 'Database error',
+      details: error.message
+    });
+  }
+};
