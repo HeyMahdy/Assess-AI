@@ -10,6 +10,7 @@ import { studentRouter } from './student.js';
 import { studentAnswerRouter } from './studentAnswer.js';
 import { gradingRouter } from './grading.js';
 import { syllabusRouter } from './syllabus.js';
+import { taChatRouter } from './taChat.js';
 
 
 export const rootRouter = Router();
@@ -26,3 +27,4 @@ rootRouter.use('/', studentRouter);
 rootRouter.use('/', studentAnswerRouter);
 rootRouter.use('/', gradingRouter);
 rootRouter.use('/', syllabusRouter);
+rootRouter.use('/', taChatRouter);

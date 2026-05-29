@@ -359,6 +359,50 @@ async def process_student_answer_endpoint(
 # ==========================================
 from utils.graphrag_agent.pipeline import extract_text_from_file, run_ingestion_pipeline
 from utils.graphrag_agent.query import query_graphrag, get_full_graph, get_prerequisite_chain
+from utils.ta_agent.agent import chat_with_ta
+
+
+class TAChatRequest(BaseModel):
+    message: str
+    history: list = []
+
+@app.post("/internal/agent/ta/chat")
+async def ta_chat_endpoint(
+    request: TAChatRequest,
+    teacher_id: str = Form(None),
+):
+    """TA Chatbot endpoint — teacher sends a message, gets a study plan response."""
+    try:
+        # teacher_id can come from form or JSON body
+        tid = teacher_id or request.dict().get("teacher_id", "")
+        if not tid:
+            raise HTTPException(status_code=400, detail="teacher_id is required")
+
+        response = await chat_with_ta(tid, request.message, request.history)
+        return {"response": response}
+    except Exception as e:
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"{e.__class__.__name__}: {e}")
+
+
+@app.post("/internal/agent/ta/chat/json")
+async def ta_chat_json_endpoint(request: dict):
+    """TA Chatbot endpoint (JSON body version)."""
+    try:
+        teacher_id = request.get("teacher_id", "")
+        message = request.get("message", "")
+        history = request.get("history", [])
+
+        if not teacher_id:
+            raise HTTPException(status_code=400, detail="teacher_id is required")
+        if not message:
+            raise HTTPException(status_code=400, detail="message is required")
+
+        response = await chat_with_ta(teacher_id, message, history)
+        return {"response": response}
+    except Exception as e:
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"{e.__class__.__name__}: {e}")
 
 
 @app.post("/internal/agent/syllabus/upload", status_code=202)
