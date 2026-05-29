@@ -97,9 +97,13 @@ export const rubricPaths = {
                 type: 'object',
                 properties: {
                   message: { type: 'string' },
-                  data: { type: 'object', description: 'The structural rubric parsing payload returned by the agent' },
+                  data: { type: 'string', description: 'JSON string of extracted rubrics returned by the agent' },
                 },
                 required: ['message', 'data'],
+              },
+              example: {
+                message: 'Rubrics processed successfully',
+                data: '{"rubrics":[{"question_label":"1a","rubric_description":{"criteria":[],"penalties":[],"fatal_flaw":null}}]}',
               },
             },
           },

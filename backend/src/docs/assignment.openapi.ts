@@ -1,12 +1,22 @@
 const assignmentSchema = {
   type: 'object',
   properties: {
-    id: { type: 'string' },
+    assignment_id: { type: 'integer' },
     title: { type: 'string' },
     subject: { type: 'string' },
     total_marks: { type: 'number' },
+    created_at: { type: 'string', format: 'date-time' },
   },
-  required: ['id', 'title', 'subject', 'total_marks'],
+  required: ['assignment_id', 'title', 'subject', 'total_marks', 'created_at'],
+} as const;
+
+const createAssignmentResponseSchema = {
+  type: 'object',
+  properties: {
+    assignment_id: { type: 'integer' },
+    message: { type: 'string' },
+  },
+  required: ['assignment_id', 'message'],
 } as const;
 
 const errorSchema = {
@@ -38,6 +48,26 @@ export const assignmentPaths = {
                   },
                 },
                 required: ['message', 'count', 'data'],
+              },
+              example: {
+                message: 'Assignments retrieved successfully',
+                count: 2,
+                data: [
+                  {
+                    assignment_id: 4,
+                    title: 'string',
+                    subject: 'string',
+                    total_marks: 0,
+                    created_at: '2026-05-29T16:48:49.693Z',
+                  },
+                  {
+                    assignment_id: 3,
+                    title: 'string',
+                    subject: 'string',
+                    total_marks: 0,
+                    created_at: '2026-05-29T16:37:05.594Z',
+                  },
+                ],
               },
             },
           },
@@ -75,7 +105,15 @@ export const assignmentPaths = {
       responses: {
         '201': {
           description: 'Created assignment',
-          content: { 'application/json': { schema: assignmentSchema } },
+          content: {
+            'application/json': {
+              schema: createAssignmentResponseSchema,
+              example: {
+                assignment_id: 12,
+                message: 'Assignment created successfully',
+              },
+            },
+          },
         },
         '400': {
           description: 'Validation error',
@@ -105,6 +143,10 @@ export const assignmentPaths = {
         '200': {
           description: 'Assignment',
           content: { 'application/json': { schema: assignmentSchema } },
+        },
+        '401': {
+          description: 'Unauthorized',
+          content: { 'application/json': { schema: errorSchema } },
         },
         '404': {
           description: 'Assignment not found',
@@ -149,6 +191,10 @@ export const assignmentPaths = {
           description: 'Updated assignment',
           content: { 'application/json': { schema: assignmentSchema } },
         },
+        '401': {
+          description: 'Unauthorized',
+          content: { 'application/json': { schema: errorSchema } },
+        },
         '404': {
           description: 'Assignment not found',
           content: { 'application/json': { schema: errorSchema } },
@@ -174,6 +220,10 @@ export const assignmentPaths = {
       responses: {
         '200': {
           description: 'Assignment deleted successfully',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        '401': {
+          description: 'Unauthorized',
           content: { 'application/json': { schema: errorSchema } },
         },
         '404': {

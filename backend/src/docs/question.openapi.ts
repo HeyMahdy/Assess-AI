@@ -69,9 +69,13 @@ export const questionPaths = {
                 type: 'object',
                 properties: {
                   message: { type: 'string' },
-                  data: { type: 'object', description: 'The analysis payload returned by the agent' },
+                  data: { type: 'string', description: 'JSON string of extracted questions returned by the agent' },
                 },
                 required: ['message', 'data'],
+              },
+              example: {
+                message: 'Questions processed successfully',
+                data: '{"questions":[{"question_label":"1a","question_description":"Define SHM."}]}',
               },
             },
           },

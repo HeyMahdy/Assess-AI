@@ -61,9 +61,13 @@ export const studentAnswerPaths: Record<string, any> = {
                 type: 'object',
                 properties: {
                   message: { type: 'string' },
-                  data: { type: 'object', description: 'The analysis payload returned by the agent' },
+                  data: { type: 'string', description: 'JSON string of extracted student answers returned by the agent' },
                 },
                 required: ['message', 'data'],
+              },
+              example: {
+                message: 'Student answers processed successfully',
+                data: '{"answers":[{"question_label":"1a","answer":"Student answer text."}]}',
               },
             },
           },

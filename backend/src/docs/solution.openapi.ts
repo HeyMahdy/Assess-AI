@@ -68,9 +68,13 @@ export const solutionPaths: Record<string, any> = {
                 type: 'object',
                 properties: {
                   message: { type: 'string' },
-                  data: { type: 'object', description: 'The analysis payload returned by the agent' },
+                  data: { type: 'string', description: 'JSON string of extracted solutions returned by the agent' },
                 },
                 required: ['message', 'data'],
+              },
+              example: {
+                message: 'Solutions processed successfully',
+                data: '{"solutions":[{"question_label":"1a","solution_text":"Answer text."}]}',
               },
             },
           },

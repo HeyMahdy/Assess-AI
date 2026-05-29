@@ -33,8 +33,8 @@ export const syllabusPaths: Record<string, any> = {
         },
       },
       responses: {
-        '200': {
-          description: 'Syllabus processed successfully',
+        '202': {
+          description: 'Syllabus upload accepted for processing',
           content: {
             'application/json': {
               schema: {
@@ -52,12 +52,62 @@ export const syllabusPaths: Record<string, any> = {
                   },
                 },
               },
+              example: {
+                message: 'Syllabus upload accepted for processing',
+                data: {
+                  syllabus_id: 1,
+                  status: 'completed',
+                  entity_count: 22,
+                  relationship_count: 18,
+                },
+              },
             },
           },
         },
         '400': { description: 'No file uploaded or text extraction failed', content: { 'application/json': { schema: syllabusErrorSchema } } },
         '401': { description: 'Unauthorized', content: { 'application/json': { schema: syllabusErrorSchema } } },
         '500': { description: 'Processing failed', content: { 'application/json': { schema: syllabusErrorSchema } } },
+      },
+    },
+  },
+  '/syllabus/{syllabusId}/status': {
+    get: {
+      tags: ['Syllabus GraphRAG'],
+      summary: 'Get syllabus ingestion status',
+      description: 'Returns the current ingestion status for a syllabus from the GraphRAG agent service.',
+      security: [{ bearerAuth: [] }],
+      parameters: [
+        { name: 'syllabusId', in: 'path', required: true, schema: { type: 'integer' } },
+      ],
+      responses: {
+        '200': {
+          description: 'Syllabus status retrieved',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  message: { type: 'string' },
+                  data: {
+                    type: 'object',
+                    additionalProperties: true,
+                    description: 'Status payload returned by the GraphRAG agent service.',
+                  },
+                },
+                required: ['message', 'data'],
+              },
+              example: {
+                message: 'Syllabus status retrieved',
+                data: {
+                  syllabus_id: 1,
+                  status: 'completed',
+                },
+              },
+            },
+          },
+        },
+        '401': { description: 'Unauthorized', content: { 'application/json': { schema: syllabusErrorSchema } } },
+        '500': { description: 'Failed to fetch syllabus status', content: { 'application/json': { schema: syllabusErrorSchema } } },
       },
     },
   },

@@ -61,9 +61,19 @@ export const getAssignments = async (req: Request, res: Response) => {
 // GET /assignments/:assignmentId
 export const getAssignmentById = async (req: Request, res: Response) => {
   const { assignmentId } = req.params;
+  const teacherId = req.authUser?.id;
+
+  if (!teacherId) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+
   try {
-    const query = 'SELECT id as assignment_id, title, subject, total_marks, created_at FROM assignments WHERE id = $1';
-    const result = await pool.query(query, [assignmentId]);
+    const query = `
+      SELECT id as assignment_id, title, subject, total_marks, created_at
+      FROM assignments
+      WHERE id = $1 AND teacher_id = $2
+    `;
+    const result = await pool.query(query, [assignmentId, teacherId]);
     
     if (result.rows.length === 0) return res.status(404).json({ message: 'Assignment not found' });
     return res.json(result.rows[0]);
@@ -77,6 +87,11 @@ export const getAssignmentById = async (req: Request, res: Response) => {
 export const updateAssignment = async (req: Request, res: Response) => {
   const { assignmentId } = req.params;
   const { title, subject, total_marks } = req.body;
+  const teacherId = req.authUser?.id;
+
+  if (!teacherId) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
   
   try {
     // Build dynamic update query
@@ -100,8 +115,12 @@ export const updateAssignment = async (req: Request, res: Response) => {
     }
 
     if (setFields.length === 0) {
-      const existingQuery = 'SELECT * FROM assignments WHERE id = $1';
-      const fallbackResult = await pool.query(existingQuery, [assignmentId]);
+      const existingQuery = `
+        SELECT id as assignment_id, title, subject, total_marks, created_at
+        FROM assignments
+        WHERE id = $1 AND teacher_id = $2
+      `;
+      const fallbackResult = await pool.query(existingQuery, [assignmentId, teacherId]);
       
       if (fallbackResult.rows.length === 0) {
         return res.status(404).json({ message: 'Assignment not found' });
@@ -116,11 +135,14 @@ export const updateAssignment = async (req: Request, res: Response) => {
     queryValues.push(assignmentId);
     const assignmentIdParam = `$${paramIndex++}`;
 
+    queryValues.push(teacherId);
+    const teacherIdParam = `$${paramIndex++}`;
+
     const query = `
       UPDATE assignments 
       SET ${setFields.join(', ')}
-      WHERE id = ${assignmentIdParam}
-      RETURNING *
+      WHERE id = ${assignmentIdParam} AND teacher_id = ${teacherIdParam}
+      RETURNING id as assignment_id, title, subject, total_marks, created_at
     `;
 
     const result = await pool.query(query, queryValues);
@@ -139,9 +161,15 @@ export const updateAssignment = async (req: Request, res: Response) => {
 // DELETE /assignments/:assignmentId
 export const deleteAssignment = async (req: Request, res: Response) => {
   const { assignmentId } = req.params;
+  const teacherId = req.authUser?.id;
+
+  if (!teacherId) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+
   try {
-    const query = 'DELETE FROM assignments WHERE id = $1';
-    const result = await pool.query(query, [assignmentId]);
+    const query = 'DELETE FROM assignments WHERE id = $1 AND teacher_id = $2';
+    const result = await pool.query(query, [assignmentId, teacherId]);
     
     if (result.rowCount === 0) {
       return res.status(404).json({ message: 'Assignment not found' });
