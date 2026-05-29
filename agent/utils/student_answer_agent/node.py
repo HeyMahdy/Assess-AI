@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 from langgraph.prebuilt import ToolNode
+from utils.document_content import build_document_human_content
 from .tools import tools
 from .state import AgentState
 from .prompt import STUDENT_ANSWER_PROMPT, system_prompt
@@ -29,25 +30,15 @@ def dynamic_extract_node(state: AgentState):
 
     messages = [SystemMessage(content=active_prompt)]
 
-    human_content = [
-        {
-            "type": "text",
-            "text": (
-                "Look at this document and transcribe ONLY the student answers that are PHYSICALLY VISIBLE. "
-                "Do NOT invent or generate any answers that are not written in the image. "
-                "If you see only 1 answer, output only 1. "
-                "Wrap all math in LaTeX ($...$)."
-            )
-        }
-    ]
-
-    if "files" in state and state["files"]:
-        for item in state["files"]:
-            image_data_url = item["content"]
-            human_content.append({
-                "type": "image_url",
-                "image_url": {"url": image_data_url}
-            })
+    human_content = build_document_human_content(
+        state.get("files", []),
+        (
+            "Look at this document and transcribe ONLY the student answers that are PHYSICALLY VISIBLE. "
+            "Do NOT invent or generate any answers that are not written in the document. "
+            "If you see only 1 answer, output only 1. "
+            "Wrap all math in LaTeX ($...$)."
+        ),
+    )
 
     messages.append(HumanMessage(content=human_content))
 

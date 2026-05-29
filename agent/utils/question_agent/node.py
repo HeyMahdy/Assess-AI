@@ -7,6 +7,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 from langgraph.prebuilt import ToolNode
 
+from utils.document_content import build_document_human_content
 from .prompts import  TEACHER_QUESTION_PROMPT, system_prompt
 from .state import AgentState
 from .tools import tools
@@ -35,22 +36,11 @@ def dynamic_extract_node(state: AgentState):
         
     messages = [SystemMessage(content=active_prompt)]
     
-    # 2. Build the list of images for the Vision LLM
-    # We start with our text instruction block
-    human_content = [
-        {"type": "text", "text": "Please transcribe and structure these document pages seamlessly together."}
-    ]
-
-    # Loop through all uploaded images and append them into human_content
-    if "files" in state:
-        for item in state["files"]:
-            image_data_url = item["content"]  # This holds the base64 string of the image
-            
-            # Append each image layout to the payload
-            human_content.append({
-                "type": "image_url", 
-                "image_url": {"url": image_data_url}
-            })
+    # 2. Build a mixed image/PDF-text payload for the LLM.
+    human_content = build_document_human_content(
+        state.get("files", []),
+        "Please transcribe and structure these document pages seamlessly together.",
+    )
             
     # 3. Wrap everything inside a single HumanMessage and send it to the AI
     messages.append(HumanMessage(content=human_content))
