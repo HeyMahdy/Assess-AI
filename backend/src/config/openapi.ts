@@ -6,6 +6,7 @@ import { studentPaths } from '../docs/student.openapi.js';
 import { studentAnswerPaths } from '../docs/studentAnswer.openapi.js';
 import { gradingPaths } from '../docs/grading.openapi.js';
 import { syllabusPaths } from '../docs/syllabus.openapi.js';
+import { taChatPaths } from '../docs/taChat.openapi.js';
 
 const profileSchema = {
   type: 'object',
@@ -60,6 +61,7 @@ export const openApiDocument = {
     ...studentAnswerPaths,
     ...gradingPaths,
     ...syllabusPaths,
+    ...taChatPaths,
     '/health': {
       get: {
         summary: 'Health check',
