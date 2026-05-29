@@ -19,6 +19,7 @@ class AssignmentState(TypedDict):
     # AI Outputs
     grader_1_result: Optional[dict]
     grader_2_result: Optional[dict]
+    weakness_result: Optional[dict]
 
-    # Accumulated results (operator.add appends each dict to the list)
+    # Accumulated results
     all_results: Annotated[list, operator.add]

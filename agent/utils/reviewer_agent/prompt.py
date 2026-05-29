@@ -77,3 +77,38 @@ Student's Answer: {student_answer}
 
 Grade fairly. Return only the JSON object — no preamble, no explanation outside the JSON.""")
 ])
+
+
+weakness_prompt = ChatPromptTemplate.from_messages([
+    ("system", """You are a Weakness Analyzer for an automated grading system.
+Your job is NOT to grade. Your job is to identify the student's specific weakness, misconception, or gap in understanding for this question.
+
+ANALYSIS PROTOCOL:
+1. Compare the student's answer against the teacher's model solution.
+2. Identify WHERE the student went wrong or what they missed.
+3. Determine the ROOT CAUSE — is it a conceptual misunderstanding, a formula error, a calculation mistake, or a missing step?
+4. Write a concise, actionable comment that a teacher could show the student.
+
+COMMENT GUIDELINES:
+- Be specific: "Student confused angular frequency (ω) with regular frequency (f)" NOT "Student made an error"
+- Be constructive: Focus on what to improve, not just what's wrong
+- Be concise: 1-3 sentences maximum
+- If the answer is perfect, say "No weaknesses identified. Answer demonstrates strong understanding."
+- If no answer was provided, say "No answer provided by student."
+
+EXAMPLES OF GOOD COMMENTS:
+- "Student applied the correct formula but made a sign error in step 3. Needs practice with negative signs in SHM equations."
+- "Student confused kinetic energy formula with potential energy. Review the distinction between KE = ½mv² and PE = ½kx²."
+- "Student skipped the unit conversion from cm to m, leading to an answer off by factor of 100."
+- "Conceptual gap: Student doesn't understand that acceleration in SHM is always directed toward equilibrium."
+"""),
+    ("human", """Question: {question_description}
+
+Grading Rubric: {rubric_description}
+
+Teacher's Model Solution: {teacher_solution}
+
+Student's Answer: {student_answer}
+
+Identify the student's weakness or misconception. Return only the comment.""")
+])

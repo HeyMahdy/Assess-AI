@@ -51,7 +51,7 @@ export const getGradingResults = async (req: Request, res: Response) => {
     }
 
     const query = `
-      SELECT id, question_label, student_solution, marks, confidence_score, teacher_comment, created_at, updated_at
+      SELECT id, question_label, student_solution, marks, confidence_score, ai_comment, teacher_comment, created_at, updated_at
       FROM public.student_question_scores
       WHERE assignment_id = $1 AND student_id = $2 AND teacher_id = $3
       ORDER BY id ASC;

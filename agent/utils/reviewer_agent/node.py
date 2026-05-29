@@ -1,7 +1,7 @@
 import json
 from .tools import get_assignment_labels, fetch_evaluation_context, save_student_score
 from .state import AssignmentState
-from .prompt import grader_1_prompt, grader_2_prompt
+from .prompt import grader_1_prompt, grader_2_prompt, weakness_prompt
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
@@ -10,11 +10,18 @@ class GraderOutput(BaseModel):
     score: float = Field(description="The numeric score awarded based on the rubric criteria.")
 
 
+class WeaknessOutput(BaseModel):
+    comment: str = Field(description="A concise comment identifying the student's weakness or misconception for this question.")
+
+
 llm_grader_1 = ChatOpenAI(model="gpt-4o-mini", temperature=0.1)
 structured_grader_1 = llm_grader_1.with_structured_output(GraderOutput)
 
 llm_grader_2 = ChatOpenAI(model="gpt-4o-mini", temperature=0.4)
 structured_grader_2 = llm_grader_2.with_structured_output(GraderOutput)
+
+llm_weakness = ChatOpenAI(model="gpt-4o-mini", temperature=0.3)
+structured_weakness = llm_weakness.with_structured_output(WeaknessOutput)
 
 
 def init_supervisor_node(state: AssignmentState):
@@ -114,26 +121,46 @@ def grader_2_node(state: AssignmentState):
     return {"grader_2_result": {"score": result.score}}
 
 
+def weakness_analyzer_node(state: AssignmentState):
+    """Analyzes student weakness — does NOT grade, only comments."""
+    print(f"  -> [Weakness Analyzer] Analyzing {state.get('current_label')}...")
+
+    if not state.get("student_answer"):
+        return {"weakness_result": {"comment": "No answer provided by student."}}
+
+    messages = weakness_prompt.format_messages(
+        question_description=state["question_description"],
+        rubric_description=state["rubric_description"],
+        teacher_solution=state.get("teacher_solution", "Not provided"),
+        student_answer=state["student_answer"]
+    )
+
+    result = structured_weakness.invoke(messages)
+
+    print(f"  -> [Weakness Analyzer] Comment: {result.comment[:80]}...")
+    return {"weakness_result": {"comment": result.comment}}
+
+
 def aggregate_results_node(state: AssignmentState):
-    """Aggregates both grader scores, calculates confidence, and saves to DB."""
+    """Aggregates grader scores + weakness comment, calculates confidence, saves to DB."""
     label = state["current_label"]
     g1_score = state["grader_1_result"]["score"]
     g2_score = state["grader_2_result"]["score"]
+    ai_comment = state.get("weakness_result", {}).get("comment", "")
 
     # Calculate final score (average of both graders)
     final_score = round((g1_score + g2_score) / 2, 2)
 
     # Calculate confidence based on agreement between graders
-    # If difference is small -> high confidence, if large -> low confidence
     score_diff = abs(g1_score - g2_score)
-    max_possible = max(g1_score, g2_score, 1)  # avoid division by zero
+    max_possible = max(g1_score, g2_score, 1)
     confidence = round(max(0, 1.0 - (score_diff / max_possible)), 2)
 
     confidence_label = "high" if confidence >= 0.8 else "medium" if confidence >= 0.5 else "low"
 
     print(f"  -> [Aggregate] {label}: G1={g1_score}, G2={g2_score}, Final={final_score}, Confidence={confidence} ({confidence_label})")
 
-    # Save to database
+    # Save to database (now includes ai_comment)
     save_student_score.invoke({
         "teacher_id": state["teacher_id"],
         "student_id": state["student_id"],
@@ -142,6 +169,7 @@ def aggregate_results_node(state: AssignmentState):
         "student_solution": state.get("student_answer", ""),
         "marks": final_score,
         "confidence_score": confidence,
+        "ai_comment": ai_comment,
     })
 
     combined_result = {
@@ -151,6 +179,7 @@ def aggregate_results_node(state: AssignmentState):
         "final_score": final_score,
         "confidence": confidence,
         "confidence_label": confidence_label,
+        "ai_comment": ai_comment,
     }
 
     return {"all_results": [combined_result]}

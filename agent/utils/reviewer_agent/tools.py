@@ -90,26 +90,28 @@ class SaveScoreInput(BaseModel):
     student_solution: str = Field(...)
     marks: float = Field(...)
     confidence_score: float = Field(...)
+    ai_comment: str = Field(default="", description="AI-generated comment about student weakness")
 
 @tool("save_student_score", args_schema=SaveScoreInput)
-def save_student_score(teacher_id: str, student_id: str, assignment_id: int, question_label: str, student_solution: str, marks: float, confidence_score: float) -> str:
+def save_student_score(teacher_id: str, student_id: str, assignment_id: int, question_label: str, student_solution: str, marks: float, confidence_score: float, ai_comment: str = "") -> str:
     """Saves or updates the student's score for a question in student_question_scores table."""
     sql = """
         INSERT INTO public.student_question_scores 
-            (teacher_id, student_id, assignment_id, question_label, student_solution, marks, confidence_score)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
+            (teacher_id, student_id, assignment_id, question_label, student_solution, marks, confidence_score, ai_comment)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (assignment_id, student_id, question_label)
         DO UPDATE SET 
             marks = EXCLUDED.marks,
             confidence_score = EXCLUDED.confidence_score,
             student_solution = EXCLUDED.student_solution,
+            ai_comment = EXCLUDED.ai_comment,
             updated_at = now()
         RETURNING id;
     """
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(sql, (teacher_id, student_id, assignment_id, question_label, student_solution, marks, confidence_score))
+                cur.execute(sql, (teacher_id, student_id, assignment_id, question_label, student_solution, marks, confidence_score, ai_comment))
                 new_id = cur.fetchone()['id']
                 conn.commit()
         print(f"[save_student_score] Saved score for {question_label} (id={new_id})")
