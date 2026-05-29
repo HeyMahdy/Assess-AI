@@ -9,6 +9,7 @@ import { solutionRouter } from './solution.js';
 import { studentRouter } from './student.js';
 import { studentAnswerRouter } from './studentAnswer.js';
 import { gradingRouter } from './grading.js';
+import { syllabusRouter } from './syllabus.js';
 
 
 export const rootRouter = Router();
@@ -24,3 +25,4 @@ rootRouter.use('/', solutionRouter);
 rootRouter.use('/', studentRouter);
 rootRouter.use('/', studentAnswerRouter);
 rootRouter.use('/', gradingRouter);
+rootRouter.use('/', syllabusRouter);

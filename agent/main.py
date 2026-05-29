@@ -354,5 +354,90 @@ async def process_student_answer_endpoint(
         raise HTTPException(status_code=500, detail=f"{e.__class__.__name__}: {e}")
 
 
+# ==========================================
+# GRAPHRAG ENDPOINTS
+# ==========================================
+from utils.graphrag_agent.pipeline import extract_text_from_file, run_ingestion_pipeline
+from utils.graphrag_agent.query import query_graphrag, get_full_graph, get_prerequisite_chain
+
+
+@app.post("/internal/agent/syllabus/upload")
+async def upload_syllabus(
+    file: UploadFile = File(...),
+    teacher_id: str = Form(...),
+):
+    """Upload a syllabus and run the GraphRAG ingestion pipeline."""
+    try:
+        contents = await file.read()
+        content_type = file.content_type
+
+        # Extract text
+        raw_text = extract_text_from_file(contents, content_type)
+
+        if not raw_text.strip():
+            raise HTTPException(status_code=400, detail="Could not extract text from file.")
+
+        # Create syllabus record
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO public.syllabi (teacher_id, filename, raw_text, status) VALUES (%s, %s, %s, 'processing') RETURNING id",
+                    (teacher_id, file.filename, raw_text)
+                )
+                syllabus_id = cur.fetchone()["id"]
+                conn.commit()
+
+        # Run pipeline
+        result = await run_ingestion_pipeline(syllabus_id, raw_text)
+
+        return {
+            "syllabus_id": syllabus_id,
+            "status": "completed",
+            "entity_count": result["entity_count"],
+            "relationship_count": result["relationship_count"],
+        }
+
+    except Exception as e:
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"{e.__class__.__name__}: {e}")
+
+
+@app.get("/internal/agent/syllabus/{syllabus_id}/graph")
+async def get_syllabus_graph(syllabus_id: int):
+    """Get the full entity-relationship graph for a syllabus."""
+    try:
+        result = await get_full_graph(syllabus_id)
+        return result
+    except Exception as e:
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"{e.__class__.__name__}: {e}")
+
+
+class QueryRequest(BaseModel):
+    query: str
+    syllabus_id: int
+
+@app.post("/internal/agent/syllabus/query")
+async def query_syllabus(request: QueryRequest):
+    """Query the GraphRAG system."""
+    try:
+        result = await query_graphrag(request.syllabus_id, request.query)
+        return result
+    except Exception as e:
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"{e.__class__.__name__}: {e}")
+
+
+@app.get("/internal/agent/syllabus/{syllabus_id}/prerequisites/{topic}")
+async def get_topic_prerequisites(syllabus_id: int, topic: str):
+    """Get the full prerequisite chain for a topic."""
+    try:
+        chain = await get_prerequisite_chain(syllabus_id, topic)
+        return {"topic": topic, "prerequisite_chain": chain}
+    except Exception as e:
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"{e.__class__.__name__}: {e}")
+
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

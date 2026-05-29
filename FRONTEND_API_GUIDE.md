@@ -1,334 +1,195 @@
-# Frontend Developer API Integration Guide
+# Frontend API Integration Guide
 
-## Table of Contents
-1. [Project Overview](#project-overview)
-2. [Architecture](#architecture)
-3. [Authentication](#authentication)
-4. [Complete API Reference](#complete-api-reference)
-5. [Integration Examples](#integration-examples)
-6. [Error Handling](#error-handling)
-
----
-
-## Project Overview
-
-**AI-Powered Automated Grading System** for teachers to:
-- Manage students and assignments
-- Upload exam questions (with AI OCR extraction)
-- Upload grading rubrics (with AI extraction)
-- Upload teacher solutions (with AI extraction)
-
-### Tech Stack
-- **Backend**: Node.js + TypeScript + Express (Port 3000)
-- **Agent Service**: Python + FastAPI + LangGraph + GPT-4o (Port 8000)
-- **Database**: PostgreSQL
-- **Authentication**: JWT (Access Token)
-
----
-
-## Architecture
-
-```
-Frontend (React/Vue/etc)
-    ↓ HTTP/REST
-Backend (Node.js:3000)
-    ↓ Internal HTTP
-Agent Service (Python:8000)
-    ↓
-Database (PostgreSQL)
-```
-
-**Important**: Frontend only calls Backend. Backend internally calls Agent Service.
-
----
+## Base URL: `http://localhost:8080`
 
 ## Authentication
-
-### Base URL
-```
-Development: http://localhost:3000
-Production: https://your-domain.com
-```
-
-### How Authentication Works
-1. **Signup/Login** → Receive `access_token`
-2. **Store token** securely
-3. **Include token** in all protected API calls:
-   ```
-   Authorization: Bearer <access_token>
-   ```
-
+All protected endpoints require: `Authorization: Bearer <access_token>`
 
 ---
 
-## Complete API Reference
+## Auth
 
-### 🔐 1. Authentication APIs
+### POST `/auth/signup`
+**Request:** `{ "email": "teacher@example.com", "password": "min8chars", "display_name": "Dr. Smith" }`
+**Response (201):** `{ "access_token": "jwt...", "token_type": "Bearer", "user": { "id": "uuid", "email": "...", "display_name": "..." } }`
 
-#### POST `/auth/signup`
-Create a new user account.
+### POST `/auth/login`
+**Request:** `{ "email": "teacher@example.com", "password": "min8chars" }`
+**Response (200):** `{ "access_token": "jwt...", "token_type": "Bearer", "user": { "id": "uuid", "email": "...", "display_name": "..." } }`
 
-**Request:**
+---
+
+## User Profile
+
+### GET `/users/me`
+**Response (200):** `{ "id": "uuid", "email": "...", "display_name": "...", "created_at": "..." }`
+
+### PATCH `/users/me`
+**Request:** `{ "display_name": "New Name" }`
+**Response (200):** Same as GET
+
+---
+
+## Students
+
+### POST `/students`
+**Request:** `{ "id": "2021001", "name": "Alice Johnson" }`
+**Response (201):** `{ "message": "Student added successfully", "data": { "teacher_id": "uuid", "id": "2021001", "name": "Alice Johnson", "created_at": "..." } }`
+
+### GET `/students`
+**Response (200):** `{ "message": "Students retrieved successfully", "count": 25, "data": [{ "teacher_id": "uuid", "id": "2021001", "name": "Alice", "created_at": "..." }] }`
+
+### GET `/students/:studentId`
+**Response (200):** `{ "message": "Student retrieved successfully", "data": { ... } }`
+
+### PATCH `/students/:studentId`
+**Request:** `{ "name": "Updated Name" }`
+**Response (200):** `{ "message": "Student updated successfully", "data": { ... } }`
+
+### DELETE `/students/:studentId`
+**Response (200):** `{ "message": "Student deleted successfully", "data": { "teacher_id": "uuid", "id": "2021001", "name": "Alice" } }`
+
+---
+
+## Assignments
+
+### POST `/assignments`
+**Request:** `{ "title": "Midterm Exam", "subject": "Computer Science", "total_marks": 50 }`
+**Response (201):** `{ "assignment_id": 12, "message": "Assignment created successfully" }`
+
+### GET `/assignments/:assignmentId`
+**Response (200):** `{ "assignment_id": 12, "title": "...", "subject": "...", "total_marks": 50, "created_at": "..." }`
+
+### PATCH `/assignments/:assignmentId`
+**Request:** `{ "title": "Updated", "subject": "Physics", "total_marks": 60 }` (all optional)
+**Response (200):** Full updated assignment object
+
+### DELETE `/assignments/:assignmentId`
+**Response (200):** `{ "message": "Assignment deleted successfully" }`
+
+---
+
+## Questions (AI OCR Upload)
+
+### POST `/assignments/:assignmentId/questions/upload`
+**Content-Type:** multipart/form-data
+**Fields:** `files` (up to 10), `is_handwritten` ("true"/"false")
+**Response (200):** `{ "message": "Questions processed successfully", "data": "<JSON string of extracted questions>" }`
+
+### GET `/assignments/:assignmentId/questions`
+**Response (200):** `{ "message": "Questions retrieved successfully", "count": 5, "data": [{ "id": 1, "question_label": "1a", "question_description": "...", "marks": 5, "created_at": "..." }] }`
+
+### PATCH `/assignments/:questionId/questions`
+**Request:** `{ "question_label": "1a", "question_description": "...", "marks": 7 }` (all optional)
+**Response (200):** `{ "message": "Question updated successfully", "data": { ... } }`
+
+---
+
+## Rubrics (AI OCR Upload + Manual Create)
+
+### POST `/assignments/:assignmentId/rubrics/upload`
+**Content-Type:** multipart/form-data
+**Fields:** `files` (up to 10), `is_handwritten` ("true"/"false")
+**Response (200):** `{ "message": "Rubrics processed successfully", "data": "<JSON string>" }`
+
+### POST `/assignments/:assignmentId/rubrics`
+**Manual create — Request:**
 ```json
 {
-  "email": "teacher@example.com",
-  "password": "securePassword123",
-  "display_name": "Dr. Smith"
-}
-```
-
-**Field Requirements:**
-- `email`: Required, valid email, max 320 characters
-- `password`: Required, min 8 characters, max 128 characters
-- `display_name`: Optional, max 200 characters
-
-**Success Response (201):**
-```json
-{
-  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "token_type": "Bearer",
-  "user": {
-    "id": "uuid-here",
-    "email": "teacher@example.com",
-    "display_name": "Dr. Smith"
+  "question_label": "1a",
+  "rubric_description": {
+    "criteria": [{ "points": 2.0, "description": "Correct setup" }],
+    "penalties": [{ "deduction": 1.0, "condition": "Missing steps" }],
+    "fatal_flaw": "Completely wrong approach"
   }
 }
 ```
+**Response (201):** `{ "message": "Rubric created successfully", "data": { "id": 5, "question_label": "1a", "rubric_description": {...}, "created_at": "..." } }`
 
-**Error Responses:**
-- `400`: Invalid email format or password too short
-- `409`: Email already registered
+### GET `/assignments/:assignmentId/rubrics`
+**Response (200):** `{ "message": "Rubrics retrieved successfully", "count": 5, "data": [{ "id": 1, "question_label": "1a", "rubric_description": {...}, "created_at": "..." }] }`
 
----
+### PATCH `/assignments/:rubricId/rubrics`
+**Request:** `{ "question_label": "1a", "rubric_description": {...} }` (all optional)
+**Response (200):** `{ "message": "Rubric updated successfully", "data": { ... } }`
 
-#### POST `/auth/login`
-Login with email and password.
-
-**Request:**
-```json
-{
-  "email": "teacher@example.com",
-  "password": "securePassword123"
-}
-```
-
-**Field Requirements:**
-- `email`: Required, valid email
-- `password`: Required, min 1 character, max 128 characters
-
-**Success Response (200):**
-```json
-{
-  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "token_type": "Bearer",
-  "user": {
-    "id": "uuid-here",
-    "email": "teacher@example.com",
-    "display_name": "Dr. Smith"
-  }
-}
-```
-
-**Error Responses:**
-- `400`: Missing email or password
-- `401`: Invalid email or password
-
+### DELETE `/assignments/:assignmentId/rubrics/:rubricId`
+**Response (200):** `{ "message": "Rubric deleted successfully", "data": { "id": 5, "question_label": "1a" } }`
 
 ---
 
-### 👤 2. User Profile APIs
+## Teacher Solutions (AI OCR Upload)
 
-**All endpoints require:** `Authorization: Bearer <access_token>`
+### POST `/assignments/:assignmentId/solutions/upload`
+**Content-Type:** multipart/form-data
+**Fields:** `files` (up to 10), `is_handwritten` ("true"/"false")
+**Response (200):** `{ "message": "Solutions processed successfully", "data": "<JSON string>" }`
 
-#### GET `/users/me`
-Get current user profile.
+### GET `/assignments/:assignmentId/solutions`
+**Response (200):** `{ "message": "Solutions retrieved successfully", "count": 3, "data": [{ "id": 1, "question_label": "1a", "solution_text": "...", "created_at": "..." }] }`
 
-**Success Response (200):**
-```json
-{
-  "id": "uuid-here",
-  "email": "teacher@example.com",
-  "display_name": "Dr. Smith",
-  "created_at": "2024-01-15T10:30:00Z"
-}
-```
+### PATCH `/assignments/:solutionId/solutions`
+**Request:** `{ "question_label": "1a", "solution_text": "..." }` (all optional)
+**Response (200):** `{ "message": "Solution updated successfully", "data": { ... } }`
 
----
-
-#### PATCH `/users/me`
-Update current user profile.
-
-**Request:**
-```json
-{
-  "display_name": "Dr. John Smith"
-}
-```
-
-**Success Response (200):**
-```json
-{
-  "id": "uuid-here",
-  "email": "teacher@example.com",
-  "display_name": "Dr. John Smith",
-  "created_at": "2024-01-15T10:30:00Z"
-}
-```
-
+### DELETE `/assignments/:assignmentId/solutions/:solutionId`
+**Response (200):** `{ "message": "Solution deleted successfully", "data": { "id": 1, "question_label": "1a" } }`
 
 ---
 
-### 📝 3. Assignment APIs
+## Student Answers (AI OCR Upload)
 
-**All endpoints require:** `Authorization: Bearer <access_token>`
+### POST `/assignments/:assignmentId/students/:studentId/answers/upload`
+**Content-Type:** multipart/form-data
+**Fields:** `files` (up to 10), `is_handwritten` ("true"/"false")
+**Response (200):** `{ "message": "Student answers processed successfully", "data": "<JSON string>" }`
 
-#### POST `/assignments`
-Create a new assignment.
+### GET `/assignments/:assignmentId/students/:studentId/answers`
+**Response (200):** `{ "message": "Student answers retrieved successfully", "count": 5, "data": [{ "id": 1, "question_label": "1a", "answer": "...", "created_at": "..." }] }`
 
-**Request:**
-```json
-{
-  "title": "Midterm Exam",
-  "subject": "Computer Science",
-  "total_marks": 50
-}
-```
-
-**Field Requirements:**
-- `title`: Required
-- `subject`: Required
-- `total_marks`: Required, integer
-
-**Success Response (201):**
-```json
-{
-  "assignment_id": 12,
-  "message": "Assignment created successfully"
-}
-```
+### PATCH `/student-answers/:answerId`
+**Request:** `{ "question_label": "1a", "answer": "..." }` (all optional)
+**Response (200):** `{ "message": "Student answer updated successfully", "data": { ... } }`
 
 ---
 
-#### GET `/assignments/:assignmentId`
-Get assignment details.
+## Grading (AI Dual-Grader)
 
-**Success Response (200):**
+### POST `/assignments/:assignmentId/students/:studentId/grade`
+Triggers AI grading. Compares student answers against rubrics + teacher solutions using two AI graders.
+**Response (200):**
 ```json
 {
-  "assignment_id": 12,
-  "title": "Midterm Exam",
-  "subject": "Computer Science",
-  "topic": "Recursion",
-  "total_marks": 50
-}
-```
-
-**Error Responses:**
-- `404`: Assignment not found
-
----
-
-#### PATCH `/assignments/:assignmentId`
-Update assignment details.
-
-**Request:**
-```json
-{
-  "title": "Updated Midterm Exam",
-  "topic": "Advanced Recursion"
-}
-```
-
-**Success Response (200):**
-```json
-{
-  "id": 12,
-  "title": "Updated Midterm Exam",
-  "subject": "Computer Science",
-  "topic": "Advanced Recursion",
-  "total_marks": 50,
-  "teacher_id": "uuid-here",
-  "created_at": "2024-01-15T10:30:00Z"
-}
-```
-
----
-
-#### DELETE `/assignments/:assignmentId`
-Delete an assignment.
-
-**Success Response (200):**
-```json
-{
-  "message": "Assignment deleted successfully"
-}
-```
-
-**Error Responses:**
-- `404`: Assignment not found
-
-
----
-
-### 🎓 4. Student Management APIs
-
-**All endpoints require:** `Authorization: Bearer <access_token>`
-
-#### POST `/students`
-Add a new student.
-
-**Request:**
-```json
-{
-  "id": "2021001",
-  "name": "Alice Johnson"
-}
-```
-
-**Field Requirements:**
-- `id`: Required, student ID (string)
-- `name`: Required, student name
-
-**Success Response (201):**
-```json
-{
-  "message": "Student added successfully",
-  "data": {
-    "teacher_id": "uuid-here",
-    "id": "2021001",
-    "name": "Alice Johnson",
-    "created_at": "2024-01-15T10:30:00Z"
-  }
-}
-```
-
-**Error Responses:**
-- `400`: Missing id or name
-- `401`: Unauthorized
-- `409`: Student ID already exists for this teacher
-
----
-
-#### GET `/students`
-Get all students for the authenticated teacher.
-
-**Success Response (200):**
-```json
-{
-  "message": "Students retrieved successfully",
-  "count": 25,
+  "message": "Grading completed successfully",
   "data": [
     {
-      "teacher_id": "uuid-here",
-      "id": "2021001",
-      "name": "Alice Johnson",
-      "created_at": "2024-01-15T10:30:00Z"
-    },
+      "label": "1a",
+      "grader_1_score": 4.0,
+      "grader_2_score": 4.5,
+      "final_score": 4.25,
+      "confidence": 0.89,
+      "confidence_label": "high"
+    }
+  ]
+}
+```
+
+### GET `/assignments/:assignmentId/students/:studentId/scores`
+**Response (200):**
+```json
+{
+  "message": "Grading results retrieved successfully",
+  "count": 5,
+  "total_marks": 42.5,
+  "data": [
     {
-      "teacher_id": "uuid-here",
-      "id": "2021002",
-      "name": "Bob Smith",
-      "created_at": "2024-01-15T10:35:00Z"
+      "id": 1,
+      "question_label": "1a",
+      "student_solution": "...",
+      "marks": 4.25,
+      "confidence_score": 0.89,
+      "created_at": "...",
+      "updated_at": "..."
     }
   ]
 }
@@ -336,663 +197,132 @@ Get all students for the authenticated teacher.
 
 ---
 
-#### GET `/students/:studentId`
-Get a specific student.
+## Syllabus GraphRAG
 
-**Success Response (200):**
+### POST `/syllabus/upload`
+**Content-Type:** multipart/form-data
+**Fields:** `file` (single PDF/DOCX/TXT)
+**Response (200):**
 ```json
 {
-  "message": "Student retrieved successfully",
+  "message": "Syllabus processed successfully",
   "data": {
-    "teacher_id": "uuid-here",
-    "id": "2021001",
-    "name": "Alice Johnson",
-    "created_at": "2024-01-15T10:30:00Z"
+    "syllabus_id": 1,
+    "status": "completed",
+    "entity_count": 22,
+    "relationship_count": 18
   }
 }
 ```
 
-**Error Responses:**
-- `404`: Student not found or unauthorized
-
----
-
-#### PATCH `/students/:studentId`
-Update a student's name.
-
-**Request:**
+### GET `/syllabus/:syllabusId/graph`
+**Response (200):**
 ```json
 {
-  "name": "Alice Marie Johnson"
+  "message": "Graph retrieved successfully",
+  "data": {
+    "nodes": [
+      { "id": 1, "name": "Recursion", "entity_type": "topic", "description": "...", "difficulty_level": "intermediate", "week_or_unit": "Week 5" }
+    ],
+    "edges": [
+      { "id": 1, "source": "Functions", "target": "Recursion", "relationship_type": "PREREQUISITE_OF", "strength": 5, "reason": "..." }
+    ]
+  }
 }
 ```
 
-**Success Response (200):**
+### POST `/syllabus/query`
+**Request:** `{ "query": "What do I need to learn before Dynamic Programming?", "syllabus_id": 1 }`
+**Response (200):**
 ```json
 {
-  "message": "Student updated successfully",
+  "message": "Query completed",
   "data": {
-    "teacher_id": "uuid-here",
-    "id": "2021001",
-    "name": "Alice Marie Johnson",
-    "created_at": "2024-01-15T10:30:00Z"
+    "answer": "Before learning Dynamic Programming, you need to understand Recursion and Divide & Conquer...",
+    "matched_entities": [{ "name": "Dynamic Programming", "type": "topic", "similarity": 0.92 }],
+    "prerequisites": ["Recursion", "Functions", "Arrays"],
+    "related_topics": ["Greedy Algorithms", "Memoization"]
+  }
+}
+```
+
+### GET `/syllabus/:syllabusId/prerequisites/:topic`
+**Response (200):**
+```json
+{
+  "message": "Prerequisites retrieved",
+  "data": {
+    "topic": "Dynamic Programming",
+    "prerequisite_chain": [
+      { "name": "Programming Basics", "entity_type": "topic", "difficulty_level": "beginner", "depth": 3 },
+      { "name": "Functions", "entity_type": "topic", "difficulty_level": "beginner", "depth": 2 },
+      { "name": "Recursion", "entity_type": "topic", "difficulty_level": "intermediate", "depth": 1 },
+      { "name": "Dynamic Programming", "entity_type": "topic", "difficulty_level": "advanced", "depth": 0 }
+    ]
   }
 }
 ```
 
 ---
 
-#### DELETE `/students/:studentId`
-Delete a student.
+## Quick Reference
 
-**Success Response (200):**
-```json
-{
-  "message": "Student deleted successfully",
-  "data": {
-    "teacher_id": "uuid-here",
-    "id": "2021001",
-    "name": "Alice Johnson"
-  }
-}
-```
-
+| Module | Endpoint | Method |
+|--------|----------|--------|
+| Auth | `/auth/signup` | POST |
+| Auth | `/auth/login` | POST |
+| User | `/users/me` | GET, PATCH |
+| Students | `/students` | POST, GET |
+| Students | `/students/:studentId` | GET, PATCH, DELETE |
+| Assignments | `/assignments` | POST |
+| Assignments | `/assignments/:assignmentId` | GET, PATCH, DELETE |
+| Questions | `/assignments/:assignmentId/questions/upload` | POST |
+| Questions | `/assignments/:assignmentId/questions` | GET |
+| Questions | `/assignments/:questionId/questions` | PATCH |
+| Rubrics | `/assignments/:assignmentId/rubrics/upload` | POST |
+| Rubrics | `/assignments/:assignmentId/rubrics` | POST, GET |
+| Rubrics | `/assignments/:rubricId/rubrics` | PATCH |
+| Rubrics | `/assignments/:assignmentId/rubrics/:rubricId` | DELETE |
+| Solutions | `/assignments/:assignmentId/solutions/upload` | POST |
+| Solutions | `/assignments/:assignmentId/solutions` | GET |
+| Solutions | `/assignments/:solutionId/solutions` | PATCH |
+| Solutions | `/assignments/:assignmentId/solutions/:solutionId` | DELETE |
+| Student Answers | `/assignments/:assignmentId/students/:studentId/answers/upload` | POST |
+| Student Answers | `/assignments/:assignmentId/students/:studentId/answers` | GET |
+| Student Answers | `/student-answers/:answerId` | PATCH |
+| Grading | `/assignments/:assignmentId/students/:studentId/grade` | POST |
+| Grading | `/assignments/:assignmentId/students/:studentId/scores` | GET |
+| Syllabus | `/syllabus/upload` | POST |
+| Syllabus | `/syllabus/:syllabusId/graph` | GET |
+| Syllabus | `/syllabus/query` | POST |
+| Syllabus | `/syllabus/:syllabusId/prerequisites/:topic` | GET |
 
 ---
 
-### ❓ 5. Question APIs (AI-Powered OCR)
+## File Upload Pattern (for all upload endpoints)
 
-**All endpoints require:** `Authorization: Bearer <access_token>`
-
-#### POST `/assignments/:assignmentId/questions/upload`
-Upload exam question papers and extract questions using AI.
-
-**Headers:**
-```
-Authorization: Bearer <access_token>
-Content-Type: multipart/form-data
-```
-
-**Form Data:**
-- `files`: File[] (up to 10 images or PDFs)
-- `is_handwritten`: string ("true" or "false")
-
-**Example using JavaScript Fetch:**
 ```javascript
 const formData = new FormData();
-formData.append('files', file1);
-formData.append('files', file2);
+formData.append('files', file1);  // or 'file' for syllabus (single)
 formData.append('is_handwritten', 'false');
 
-fetch('/assignments/12/questions/upload', {
+const response = await fetch('http://localhost:8080/assignments/4/questions/upload', {
   method: 'POST',
-  headers: {
-    'Authorization': `Bearer ${accessToken}`
-  },
+  headers: { 'Authorization': `Bearer ${token}` },
   body: formData
 });
 ```
 
-**Success Response (200):**
+## Error Format
 ```json
-{
-  "message": "Questions processed successfully",
-  "data": "{\"questions\": [{\"question_label\": \"1a\", \"question_description\": \"Explain recursion...\"}]}"
-}
+{ "error": "Error message", "details": "Additional info" }
 ```
 
-**Error Responses:**
-- `400`: No files uploaded
-- `401`: Unauthorized
-- `500`: Failed to process question document
-
----
-
-#### GET `/assignments/:assignmentId/questions`
-Get all questions for an assignment.
-
-**Success Response (200):**
-```json
-{
-  "message": "Questions retrieved successfully",
-  "count": 5,
-  "data": [
-    {
-      "id": 1,
-      "question_label": "1a",
-      "question_description": "Explain the concept of recursion with an example.",
-      "marks": 5,
-      "created_at": "2024-01-15T10:30:00Z"
-    },
-    {
-      "id": 2,
-      "question_label": "1b",
-      "question_description": "Write a recursive function for factorial.",
-      "marks": 10,
-      "created_at": "2024-01-15T10:30:00Z"
-    }
-  ]
-}
-```
-
----
-
-#### PATCH `/assignments/:questionId/questions`
-Update a question.
-
-**Request (all fields optional):**
-```json
-{
-  "question_label": "1a (updated)",
-  "question_description": "Explain recursion with TWO examples.",
-  "marks": 7
-}
-```
-
-**Success Response (200):**
-```json
-{
-  "message": "Question updated successfully",
-  "data": {
-    "id": 1,
-    "question_label": "1a (updated)",
-    "question_description": "Explain recursion with TWO examples.",
-    "marks": 7,
-    "created_at": "2024-01-15T10:30:00Z"
-  }
-}
-```
-
-
----
-
-### 📋 6. Rubrics APIs (AI-Powered OCR)
-
-**All endpoints require:** `Authorization: Bearer <access_token>`
-
-#### POST `/assignments/:assignmentId/rubrics/upload`
-Upload grading rubrics and extract criteria using AI.
-
-**Headers:**
-```
-Authorization: Bearer <access_token>
-Content-Type: multipart/form-data
-```
-
-**Form Data:**
-- `files`: File[] (up to 10 images or PDFs)
-- `is_handwritten`: string ("true" or "false")
-
-**Success Response (200):**
-```json
-{
-  "message": "Rubrics processed successfully",
-  "data": "{\"rubrics\": [{\"question_label\": \"1a\", \"rubric_description\": {...}}]}"
-}
-```
-
----
-
-#### GET `/assignments/:assignmentId/rubrics`
-Get all rubrics for an assignment.
-
-**Success Response (200):**
-```json
-{
-  "message": "Rubrics retrieved successfully",
-  "count": 5,
-  "data": [
-    {
-      "id": 1,
-      "question_label": "1a",
-      "rubric_description": {
-        "criteria": [
-          {"points": 2, "description": "Correct definition"},
-          {"points": 2, "description": "Valid example"}
-        ],
-        "penalties": [
-          {"deduction": -1, "condition": "Missing base case"}
-        ],
-        "fatal_flaw": "Completely incorrect concept"
-      },
-      "created_at": "2024-01-15T10:30:00Z"
-    }
-  ]
-}
-```
-
----
-
-#### PATCH `/assignments/:rubricId/rubrics`
-Update a rubric.
-
-**Request (all fields optional):**
-```json
-{
-  "question_label": "1a (updated)",
-  "rubric_description": {
-    "criteria": [
-      {"points": 3, "description": "Excellent definition"}
-    ],
-    "penalties": [],
-    "fatal_flaw": null
-  }
-}
-```
-
-**Success Response (200):**
-```json
-{
-  "message": "Rubric updated successfully",
-  "data": {
-    "id": 1,
-    "question_label": "1a (updated)",
-    "rubric_description": {...},
-    "created_at": "2024-01-15T10:30:00Z"
-  }
-}
-```
-
-
----
-
-### ✅ 7. Teacher Solutions APIs (AI-Powered OCR)
-
-**All endpoints require:** `Authorization: Bearer <access_token>`
-
-#### POST `/assignments/:assignmentId/solutions/upload`
-Upload teacher solution documents and extract solutions using AI.
-
-**Headers:**
-```
-Authorization: Bearer <access_token>
-Content-Type: multipart/form-data
-```
-
-**Form Data:**
-- `files`: File[] (up to 10 images or PDFs)
-- `is_handwritten`: string ("true" or "false")
-
-**Success Response (200):**
-```json
-{
-  "message": "Solutions processed successfully",
-  "data": "{\"solutions\": [{\"question_label\": \"1a\", \"solution_text\": \"Recursion is...\"}]}"
-}
-```
-
----
-
-#### GET `/assignments/:assignmentId/solutions`
-Get all teacher solutions for an assignment.
-
-**Success Response (200):**
-```json
-{
-  "message": "Solutions retrieved successfully",
-  "count": 5,
-  "data": [
-    {
-      "id": 1,
-      "question_label": "1a",
-      "solution_text": "Recursion is a programming technique where a function calls itself...",
-      "created_at": "2024-01-15T10:30:00Z"
-    }
-  ]
-}
-```
-
----
-
-#### PATCH `/assignments/:solutionId/solutions`
-Update a teacher solution.
-
-**Request (all fields optional):**
-```json
-{
-  "question_label": "1a (updated)",
-  "solution_text": "Updated solution text..."
-}
-```
-
-**Success Response (200):**
-```json
-{
-  "message": "Solution updated successfully",
-  "data": {
-    "id": 1,
-    "question_label": "1a (updated)",
-    "solution_text": "Updated solution text...",
-    "created_at": "2024-01-15T10:30:00Z"
-  }
-}
-```
-
-
----
-
-## Integration Examples
-
-### Example 1: User Signup and Login
-
-```javascript
-// Signup
-const signupResponse = await fetch('http://localhost:3000/auth/signup', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    email: 'teacher@example.com',
-    password: 'securePassword123',
-    display_name: 'Dr. Smith'
-  })
-});
-
-const { access_token, user } = await signupResponse.json();
-localStorage.setItem('access_token', access_token);
-
-// Login
-const loginResponse = await fetch('http://localhost:3000/auth/login', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    email: 'teacher@example.com',
-    password: 'securePassword123'
-  })
-});
-
-const { access_token, user } = await loginResponse.json();
-localStorage.setItem('access_token', access_token);
-```
-
----
-
-### Example 2: Complete Assignment Setup
-
-```javascript
-const token = localStorage.getItem('access_token');
-
-// 1. Create Assignment
-const assignmentRes = await fetch('http://localhost:3000/assignments', {
-  method: 'POST',
-  headers: {
-    'Authorization': `Bearer ${token}`,
-    'Content-Type': 'application/json'
-  },
-  body: JSON.stringify({
-    title: 'Midterm Exam',
-    subject: 'Computer Science',
-    total_marks: 50
-  })
-});
-const { assignment_id } = await assignmentRes.json();
-
-// 2. Upload Questions
-const questionFormData = new FormData();
-questionFormData.append('files', questionFile);
-questionFormData.append('is_handwritten', 'false');
-
-await fetch(`http://localhost:3000/assignments/${assignment_id}/questions/upload`, {
-  method: 'POST',
-  headers: { 'Authorization': `Bearer ${token}` },
-  body: questionFormData
-});
-
-// 3. Upload Rubrics
-const rubricFormData = new FormData();
-rubricFormData.append('files', rubricFile);
-rubricFormData.append('is_handwritten', 'false');
-
-await fetch(`http://localhost:3000/assignments/${assignment_id}/rubrics/upload`, {
-  method: 'POST',
-  headers: { 'Authorization': `Bearer ${token}` },
-  body: rubricFormData
-});
-
-// 4. Upload Solutions
-const solutionFormData = new FormData();
-solutionFormData.append('files', solutionFile);
-solutionFormData.append('is_handwritten', 'false');
-
-await fetch(`http://localhost:3000/assignments/${assignment_id}/solutions/upload`, {
-  method: 'POST',
-  headers: { 'Authorization': `Bearer ${token}` },
-  body: solutionFormData
-});
-```
-
----
-
-### Example 3: Student Management
-
-```javascript
-const token = localStorage.getItem('access_token');
-
-// Add Student
-await fetch('http://localhost:3000/students', {
-  method: 'POST',
-  headers: {
-    'Authorization': `Bearer ${token}`,
-    'Content-Type': 'application/json'
-  },
-  body: JSON.stringify({
-    id: '2021001',
-    name: 'Alice Johnson'
-  })
-});
-
-// Get All Students
-const studentsRes = await fetch('http://localhost:3000/students', {
-  headers: { 'Authorization': `Bearer ${token}` }
-});
-const { data: students } = await studentsRes.json();
-
-// Update Student
-await fetch('http://localhost:3000/students/2021001', {
-  method: 'PATCH',
-  headers: {
-    'Authorization': `Bearer ${token}`,
-    'Content-Type': 'application/json'
-  },
-  body: JSON.stringify({ name: 'Alice Marie Johnson' })
-});
-
-// Delete Student
-await fetch('http://localhost:3000/students/2021001', {
-  method: 'DELETE',
-  headers: { 'Authorization': `Bearer ${token}` }
-});
-```
-
-
----
-
-## Error Handling
-
-### Standard Error Response Format
-
-```json
-{
-  "error": "Error message",
-  "details": "Additional details (optional)"
-}
-```
-
-### Common HTTP Status Codes
-
-| Code | Meaning | When It Happens |
-|------|---------|-----------------|
-| 200 | OK | Request successful |
-| 201 | Created | Resource created successfully |
-| 400 | Bad Request | Invalid data or missing required fields |
-| 401 | Unauthorized | Missing or invalid access token |
-| 404 | Not Found | Resource doesn't exist |
-| 409 | Conflict | Duplicate resource (e.g., email/student ID exists) |
-| 500 | Internal Server Error | Server or database error |
-
-### Error Handling Example
-
-```javascript
-async function apiCall(url, options) {
-  try {
-    const response = await fetch(url, options);
-    
-    if (!response.ok) {
-      const error = await response.json();
-      
-      switch (response.status) {
-        case 401:
-          // Token expired - redirect to login
-          localStorage.removeItem('access_token');
-          window.location.href = '/login';
-          break;
-        case 409:
-          // Conflict (duplicate)
-          alert(`Error: ${error.error}`);
-          break;
-        case 400:
-          // Validation error
-          alert(`Validation Error: ${error.error}`);
-          break;
-        default:
-          console.error('API Error:', error);
-          alert('An error occurred. Please try again.');
-      }
-      return null;
-    }
-    
-    return await response.json();
-    
-  } catch (err) {
-    console.error('Network error:', err);
-    alert('Network error. Please check your connection.');
-    return null;
-  }
-}
-
-// Usage
-const result = await apiCall('http://localhost:3000/students', {
-  method: 'POST',
-  headers: {
-    'Authorization': `Bearer ${token}`,
-    'Content-Type': 'application/json'
-  },
-  body: JSON.stringify({ id: '2021001', name: 'Alice' })
-});
-```
-
----
-
-## Quick Reference: All Endpoints
-
-### Authentication
-- `POST /auth/signup` - Create account
-- `POST /auth/login` - Login
-
-### User Profile
-- `GET /users/me` - Get profile
-- `PATCH /users/me` - Update profile
-
-### Students
-- `POST /students` - Add student
-- `GET /students` - Get all students
-- `GET /students/:studentId` - Get student
-- `PATCH /students/:studentId` - Update student
-- `DELETE /students/:studentId` - Delete student
-
-### Assignments
-- `POST /assignments` - Create assignment
-- `GET /assignments/:assignmentId` - Get assignment
-- `PATCH /assignments/:assignmentId` - Update assignment
-- `DELETE /assignments/:assignmentId` - Delete assignment
-
-### Questions (AI OCR)
-- `POST /assignments/:assignmentId/questions/upload` - Upload & extract
-- `GET /assignments/:assignmentId/questions` - Get questions
-- `PATCH /assignments/:questionId/questions` - Update question
-
-### Rubrics (AI OCR)
-- `POST /assignments/:assignmentId/rubrics/upload` - Upload & extract
-- `GET /assignments/:assignmentId/rubrics` - Get rubrics
-- `PATCH /assignments/:rubricId/rubrics` - Update rubric
-
-### Teacher Solutions (AI OCR)
-- `POST /assignments/:assignmentId/solutions/upload` - Upload & extract
-- `GET /assignments/:assignmentId/solutions` - Get solutions
-- `PATCH /assignments/:solutionId/solutions` - Update solution
-
----
-
-## Important Notes
-
-1. **Authentication**: All endpoints except `/auth/*` require `Authorization: Bearer <token>`
-2. **File Uploads**: Use `multipart/form-data` with `FormData` object
-3. **AI Processing**: Upload endpoints may take 5-30 seconds
-4. **File Limits**: Maximum 10 files per upload
-5. **Supported Formats**: Images (JPG, PNG) and PDFs
-6. **Token Storage**: Store `access_token` securely (localStorage/sessionStorage)
-7. **Base URL**: `http://localhost:3000` (development)
-
----
-
-## Database Schema Reference
-
-### Users Table
-- `id`: UUID (primary key)
-- `email`: String (unique)
-- `display_name`: String (nullable)
-- `password_hash`: String
-- `created_at`: Timestamp
-
-### Students Table
-- `teacher_id`: UUID (foreign key to users)
-- `id`: String (student ID)
-- `name`: String
-- `created_at`: Timestamp
-- **Primary Key**: (teacher_id, id)
-
-### Assignments Table
-- `id`: Integer (primary key)
-- `teacher_id`: UUID (foreign key)
-- `title`: String
-- `subject`: String
-- `topic`: String (nullable)
-- `total_marks`: Integer
-- `created_at`: Timestamp
-
-### Questions Table
-- `id`: Integer (primary key)
-- `teacher_id`: UUID (foreign key)
-- `assignment_id`: Integer (foreign key)
-- `question_label`: String
-- `question_description`: Text
-- `marks`: Integer (nullable)
-- `created_at`: Timestamp
-
-### Rubrics Table
-- `id`: Integer (primary key)
-- `teacher_id`: UUID (foreign key)
-- `assignment_id`: Integer (foreign key)
-- `question_label`: String
-- `rubric_description`: JSONB
-- `created_at`: Timestamp
-
-### Teacher Solutions Table
-- `id`: Integer (primary key)
-- `teacher_id`: UUID (foreign key)
-- `assignment_id`: Integer (foreign key)
-- `question_label`: String
-- `solution_text`: Text
-- `created_at`: Timestamp
-
----
-
-## Support
-
-For issues:
-- Check error messages in API responses
-- Verify token is included in headers
-- Ensure request body matches expected format
-- Check browser DevTools Network tab
-
-**Backend Port**: 3000 (default)
-**Agent Service**: 8000 (internal only - don't call directly)
+## Status Codes
+- 200: Success
+- 201: Created
+- 400: Bad request / validation error
+- 401: Unauthorized (missing/invalid token)
+- 404: Not found
+- 409: Conflict (duplicate)
+- 500: Server error
