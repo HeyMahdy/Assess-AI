@@ -1,26 +1,71 @@
 RUBRIC_PROMPT = """
-You are an expert grading architect. Your mission is to take a teacher's messy grading rubric document and convert it into a strict, logical JSON structure.
+You are an expert grading architect. Your mission is to take a teacher's grading rubric document and convert it into a strict JSON structure.
 
-CRITICAL RULES:
+══════════════════════════════════════════════
+ABSOLUTE RULES
+══════════════════════════════════════════════
 1. ONLY extract rubric rules for questions explicitly mentioned in the text. DO NOT invent or hallucinate question labels.
-2. Structure the grading criteria into positive points, penalties, and fatal flaws.
-3. If a section (like 'penalties') is not mentioned for a question, leave the array empty [].
-4. STRIP REDUNDANT TEXT: Do not include phrases like "Award +2.0 points for" or "Deduct -1.0 point if" inside the description/condition strings. The point values are already strictly captured in the numerical keys. Extract ONLY the core action/requirement.
-5. You MUST output a valid JSON object.
+2. You MUST use the EXACT JSON schema shown below. No variations allowed.
+3. STRIP REDUNDANT TEXT: Do not include phrases like "Award +2 points for" inside the description. The point values are in the numerical fields.
+4. Output ONLY valid JSON. No markdown, no explanation.
 
-Output JSON Schema Requirements:
+══════════════════════════════════════════════
+MANDATORY JSON SCHEMA — USE EXACTLY THIS
+══════════════════════════════════════════════
+
 {
   "rubrics": [
     {
-      "question_label": "The exact question number/label (e.g., '1', '2a')",
+      "question_label": "1(a)",
       "rubric_description": {
         "criteria": [
-          {"points": 2.0, "description": "The specific action that earns points (e.g., 'Correctly setting up the equation')"}
+          {"points": 2, "description": "What earns these points"}
         ],
         "penalties": [
-          {"deduction": 1.0, "condition": "The specific error that loses points (e.g., 'Failing to provide truth tables')"}
+          {"deduction": 1, "condition": "What loses these points"}
         ],
-        "fatal_flaw": "A string describing what results in a 0, or null if none."
+        "fatal_flaw": "What gives 0, or null if none"
+      }
+    }
+  ]
+}
+
+CRITICAL SCHEMA RULES:
+- criteria array: each item MUST have exactly "points" (number) and "description" (string)
+- penalties array: each item MUST have exactly "deduction" (number) and "condition" (string)
+- fatal_flaw: MUST be a string or null
+- DO NOT use "mark", "for", "marks_total", or any other field names
+- DO NOT add extra fields like "marks_total" outside the criteria array
+- If no penalties exist for a question, use an empty array: "penalties": []
+- If no fatal flaw exists, use: "fatal_flaw": null
+
+══════════════════════════════════════════════
+WRONG OUTPUT (DO NOT DO THIS):
+══════════════════════════════════════════════
+{
+  "criteria": [{"for": "...", "mark": 1}],
+  "marks_total": 5
+}
+
+The above is WRONG because it uses "for" and "mark" instead of "points" and "description", and adds "marks_total" which is not in the schema.
+
+══════════════════════════════════════════════
+CORRECT OUTPUT:
+══════════════════════════════════════════════
+{
+  "rubrics": [
+    {
+      "question_label": "2(a)(i)",
+      "rubric_description": {
+        "criteria": [
+          {"points": 1, "description": "Correctly applying the formula ω = √(k/m)"},
+          {"points": 1, "description": "Correctly applying v_max = Aω"},
+          {"points": 2, "description": "Arriving at the correct numerical answer"}
+        ],
+        "penalties": [
+          {"deduction": 1, "condition": "Math error despite correct formulas"}
+        ],
+        "fatal_flaw": "Using linear kinematics equations instead of SHM formulas"
       }
     }
   ]
