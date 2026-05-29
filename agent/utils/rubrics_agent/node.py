@@ -14,7 +14,7 @@ from .prompt import RUBRIC_PROMPT,system_prompt
 load_dotenv()
 
 # 1. Initialize LLMs
-llm = ChatOpenAI(model="gpt-5.4-mini", temperature=0) # Updated to gpt-4o for complex OCR vision tasks
+llm = ChatOpenAI(model="gpt-4o", temperature=0)
 
 # CRITICAL FIX: The saving agent MUST have tools bound to it!
 agent_llm = llm.bind_tools(tools)
@@ -37,10 +37,11 @@ def dynamic_extract_node(state: AgentState):
     human_content = build_document_human_content(
         state.get("files", []),
         (
-            "CRITICAL ASSIGNMENT: Transcribe EVERY SINGLE grading rubric/criteria block "
-            "from these documents. Wrap all mathematical grading variables, fractions, formulas, "
-            "and symbols inside standard inline LaTeX ($...$) to ensure character-level accuracy. "
-            "Do not skip any rows, points, or penalties."
+            "Extract all rubric criteria from these documents. "
+            "Use the EXACT JSON schema specified in the system prompt: "
+            "criteria items must use 'points' and 'description' fields (NOT 'mark', 'point', 'for', or 'marks_total'). "
+            "penalties items must use 'deduction' and 'condition' fields. "
+            "Wrap all mathematical expressions in LaTeX dollar signs ($...$)."
         ),
     )
             
