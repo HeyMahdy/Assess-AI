@@ -5,7 +5,7 @@ from .tools import set_ta_auth_context
 
 
 def _log(message: str) -> None:
-    print(f"[ta_agent.chat] {message}", flush=True)
+    return None
 
 
 def _build_history_messages(history: list | None):
@@ -56,7 +56,7 @@ async def chat_with_ta(teacher_id: str, message: str, history: list = None, acce
         f"message={message[:300]!r}"
     )
     graph = build_ta_graph()
-    set_ta_auth_context(access_token)
+    set_ta_auth_context(access_token, teacher_id=teacher_id)
 
     messages = _build_history_messages(history)
     messages.append(HumanMessage(content=message))

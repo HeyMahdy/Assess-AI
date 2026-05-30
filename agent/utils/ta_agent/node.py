@@ -1,3 +1,5 @@
+import os
+
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage
 from langgraph.prebuilt import ToolNode
@@ -11,11 +13,15 @@ tool_node = ToolNode(tools)
 
 
 def _log(message: str) -> None:
-    print(f"[ta_agent.node] {message}", flush=True)
+    return None
 
 
 def _get_agent_llm():
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.3)
+    model_name = os.getenv("TA_AGENT_MODEL", "gpt-5.1")
+    llm_kwargs = {"model": model_name}
+    if not model_name.startswith("gpt-5"):
+        llm_kwargs["temperature"] = 0.1
+    llm = ChatOpenAI(**llm_kwargs)
     return llm.bind_tools(tools)
 
 

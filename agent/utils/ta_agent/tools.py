@@ -1,8 +1,9 @@
 import json
 import re
+from contextvars import ContextVar
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Optional
 from uuid import UUID
 
 from langchain_core.tools import tool
@@ -14,6 +15,7 @@ from config.db import get_db_connection
 MAX_RESULT_ROWS = 50
 DEFAULT_RESULT_ROWS = MAX_RESULT_ROWS
 REDACTED = "[REDACTED]"
+_ta_teacher_id: ContextVar[str] = ContextVar("ta_teacher_id", default="")
 
 SENSITIVE_COLUMN_PATTERNS = (
     "password",
@@ -269,9 +271,9 @@ def _log(message: str) -> None:
     print(f"[ta_agent.sql] {message}", flush=True)
 
 
-def set_ta_auth_context(access_token: str = "") -> None:
-    """Compatibility no-op; TA SQL tools use DATABASE_URL, not backend auth."""
-    return None
+def set_ta_auth_context(access_token: str = "", teacher_id: str = "") -> None:
+    """Keep compatibility with the old auth hook while storing teacher scope."""
+    _ta_teacher_id.set(teacher_id or "")
 
 
 def _is_sensitive_column(column_name: str) -> bool:
@@ -300,6 +302,20 @@ def _redact_row(row: dict[str, Any]) -> dict[str, Any]:
         key: REDACTED if _is_sensitive_column(key) else _json_safe(value)
         for key, value in row.items()
     }
+
+
+def _numeric_column_summaries(rows: list[dict[str, Any]]) -> dict[str, dict[str, float | int]]:
+    summaries: dict[str, dict[str, float | int]] = {}
+    for row in rows:
+        for key, value in row.items():
+            if isinstance(value, bool):
+                continue
+            if isinstance(value, (int, float)):
+                column_summary = summaries.setdefault(key, {"sum": 0.0, "count": 0})
+                column_summary["sum"] = float(column_summary["sum"]) + float(value)
+                column_summary["count"] = int(column_summary["count"]) + 1
+
+    return summaries
 
 
 def _split_requested_tables(table_names: str) -> list[str]:
@@ -382,6 +398,137 @@ def _preview_query(query: str) -> str:
     return compact[:500] + ("..." if len(compact) > 500 else "")
 
 
+def _preview_params(params: tuple[Any, ...]) -> str:
+    safe_params = [_json_safe(param) for param in params]
+    return json.dumps(safe_params)
+
+
+def _current_teacher_id() -> str:
+    return _ta_teacher_id.get("")
+
+
+def _require_teacher_id() -> Optional[str]:
+    teacher_id = _current_teacher_id()
+    return teacher_id or None
+
+
+def _execute_readonly_query(query: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
+    _log(f"query: {_preview_query(query)} params={_preview_params(params)}")
+    with get_db_connection() as conn:
+        conn.set_session(readonly=True, autocommit=True)
+        with conn.cursor() as cur:
+            cur.execute("SET statement_timeout = 10000")
+            cur.execute(query, params)
+            rows = [_redact_row(dict(row)) for row in cur.fetchall()]
+            _log(f"result: {json.dumps({'row_count': len(rows), 'rows': rows})}")
+            return rows
+
+
+def _extract_teacher_facing_student_id(student_ref: str) -> str:
+    match = re.search(r"\b\d{4,}\b", student_ref or "")
+    return match.group(0) if match else ""
+
+
+def _resolve_student(student_ref: str) -> dict[str, Any]:
+    teacher_id = _require_teacher_id()
+    if not teacher_id:
+        return {"error": "teacher_id is not available in TA context"}
+
+    ref = (student_ref or "").strip()
+    if not ref:
+        return {"error": "student_ref is required"}
+
+    extracted_student_id = _extract_teacher_facing_student_id(ref)
+    exact_ref = extracted_student_id or ref
+
+    exact_rows = _execute_readonly_query(
+        """
+        SELECT id::text AS internal_student_uuid, student_id, name, created_at
+        FROM public.students
+        WHERE teacher_id = %s
+          AND (student_id = %s OR id::text = %s OR LOWER(name) = LOWER(%s))
+        ORDER BY
+          CASE
+            WHEN student_id = %s THEN 0
+            WHEN id::text = %s THEN 1
+            WHEN LOWER(name) = LOWER(%s) THEN 2
+            ELSE 3
+          END,
+          created_at DESC
+        LIMIT 5
+        """,
+        (teacher_id, exact_ref, exact_ref, ref, exact_ref, exact_ref, ref),
+    )
+
+    if len(exact_rows) == 1:
+        return {"student": exact_rows[0]}
+    if len(exact_rows) > 1:
+        return {"multiple_matches": exact_rows}
+
+    partial_rows = _execute_readonly_query(
+        """
+        SELECT id::text AS internal_student_uuid, student_id, name, created_at
+        FROM public.students
+        WHERE teacher_id = %s
+          AND (name ILIKE %s OR student_id ILIKE %s)
+        ORDER BY
+          CASE WHEN student_id = %s THEN 0 WHEN name ILIKE %s THEN 1 ELSE 2 END,
+          name ASC,
+          student_id ASC
+        LIMIT 5
+        """,
+        (teacher_id, f"%{ref}%", f"%{ref}%", exact_ref, f"{ref}%"),
+    )
+
+    if len(partial_rows) == 1:
+        return {"student": partial_rows[0]}
+    if len(partial_rows) > 1:
+        return {"multiple_matches": partial_rows}
+
+    return {"error": f"No student found for reference: {student_ref}"}
+
+
+def _resolve_assignment(assignment_id: Optional[int] = None, assignment_ref: str = "") -> dict[str, Any]:
+    teacher_id = _require_teacher_id()
+    if not teacher_id:
+        return {"error": "teacher_id is not available in TA context"}
+
+    if assignment_id:
+        rows = _execute_readonly_query(
+            """
+            SELECT id, title, subject, total_marks, created_at
+            FROM public.assignments
+            WHERE teacher_id = %s AND id = %s
+            LIMIT 1
+            """,
+            (teacher_id, assignment_id),
+        )
+    else:
+        ref = (assignment_ref or "").strip()
+        if not ref:
+            return {"assignment": None}
+        rows = _execute_readonly_query(
+            """
+            SELECT id, title, subject, total_marks, created_at
+            FROM public.assignments
+            WHERE teacher_id = %s
+              AND (LOWER(title) = LOWER(%s) OR title ILIKE %s OR subject ILIKE %s)
+            ORDER BY
+              CASE WHEN LOWER(title) = LOWER(%s) THEN 0 WHEN title ILIKE %s THEN 1 ELSE 2 END,
+              created_at DESC,
+              id DESC
+            LIMIT 5
+            """,
+            (teacher_id, ref, f"%{ref}%", f"%{ref}%", ref, f"{ref}%"),
+        )
+
+    if len(rows) == 1:
+        return {"assignment": rows[0]}
+    if len(rows) > 1:
+        return {"multiple_matches": rows}
+    return {"error": "Assignment not found"}
+
+
 class SchemaInput(BaseModel):
     table_names: str = Field(
         ...,
@@ -393,10 +540,269 @@ class QueryInput(BaseModel):
     query: str = Field(..., description="A single read-only PostgreSQL SELECT query.")
 
 
+class StudentResultInput(BaseModel):
+    student_ref: str = Field(..., description="Student name, teacher-facing student ID, or internal UUID if already known.")
+    assignment_id: Optional[int] = Field(default=None, description="Optional assignment primary key.")
+    assignment_ref: str = Field(default="", description="Optional assignment title/subject reference if assignment_id is unknown.")
+
+
+class StudentQuestionBreakdownInput(BaseModel):
+    student_ref: str = Field(..., description="Student name, teacher-facing student ID, or internal UUID if already known.")
+    assignment_id: Optional[int] = Field(default=None, description="Optional assignment primary key.")
+    assignment_ref: str = Field(default="", description="Optional assignment title/subject reference if assignment_id is unknown.")
+
+
+class CommonMistakesInput(BaseModel):
+    assignment_id: Optional[int] = Field(default=None, description="Optional assignment primary key.")
+    assignment_ref: str = Field(default="", description="Optional assignment title/subject reference if assignment_id is unknown.")
+    student_ref: str = Field(default="", description="Optional student filter for one student's mistakes.")
+    limit: int = Field(default=10, ge=1, le=25, description="Maximum grouped mistakes to return.")
+
+
+def _friendly_student(student: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "name": student.get("name"),
+        "student_id": student.get("student_id"),
+        "created_at": student.get("created_at"),
+    }
+
+
+def _friendly_candidates(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [_friendly_student(candidate) for candidate in candidates]
+
+
+def _student_resolution_response(resolution: dict[str, Any]) -> Optional[str]:
+    if "student" in resolution:
+        return None
+    if "multiple_matches" in resolution:
+        return json.dumps({
+            "status": "multiple_student_matches",
+            "message": "Multiple students matched. Ask the teacher to choose by student_id.",
+            "candidates": _friendly_candidates(resolution["multiple_matches"]),
+        })
+    return json.dumps({"status": "not_found", "error": resolution.get("error", "Student not found")})
+
+
+def _assignment_resolution_response(resolution: dict[str, Any]) -> Optional[str]:
+    if "assignment" in resolution:
+        return None
+    if "multiple_matches" in resolution:
+        return json.dumps({
+            "status": "multiple_assignment_matches",
+            "message": "Multiple assignments matched. Ask the teacher to choose by assignment title or id.",
+            "candidates": resolution["multiple_matches"],
+        })
+    return json.dumps({"status": "not_found", "error": resolution.get("error", "Assignment not found")})
+
+
+@tool("get_student_result", args_schema=StudentResultInput)
+def get_student_result(student_ref: str, assignment_id: Optional[int] = None, assignment_ref: str = "") -> str:
+    """Resolve a student and return assignment-level result totals computed by SQL aggregates."""
+    teacher_id = _require_teacher_id()
+    if not teacher_id:
+        return json.dumps({"status": "error", "error": "teacher_id is not available in TA context"})
+
+    student_resolution = _resolve_student(student_ref)
+    early_response = _student_resolution_response(student_resolution)
+    if early_response:
+        return early_response
+
+    student = student_resolution["student"]
+    assignment = None
+    if assignment_id or assignment_ref.strip():
+        assignment_resolution = _resolve_assignment(assignment_id, assignment_ref)
+        early_response = _assignment_resolution_response(assignment_resolution)
+        if early_response:
+            return early_response
+        assignment = assignment_resolution["assignment"]
+
+    assignment_filter = "AND a.id = %s" if assignment else ""
+    params: tuple[Any, ...] = (
+        teacher_id,
+        student["internal_student_uuid"],
+        student["student_id"],
+        *(((assignment or {}).get("id"),) if assignment else ()),
+    )
+    rows = _execute_readonly_query(
+        f"""
+        SELECT
+          a.id AS assignment_id,
+          a.title AS assignment_title,
+          a.subject,
+          a.total_marks AS assignment_total_marks,
+          SUM(sqs.marks)::float AS marks_obtained,
+          COUNT(*)::int AS graded_question_count,
+          MAX(sqs.updated_at) AS latest_score_update
+        FROM public.student_question_scores sqs
+        INNER JOIN public.assignments a
+          ON a.id = sqs.assignment_id
+          AND a.teacher_id = %s
+        WHERE (sqs.student_id = %s OR sqs.student_id = %s)
+          {assignment_filter}
+        GROUP BY a.id, a.title, a.subject, a.total_marks
+        ORDER BY a.id DESC
+        """,
+        params,
+    )
+
+    return json.dumps({
+        "status": "ok",
+        "evidence_query_used": True,
+        "student": _friendly_student(student),
+        "assignment_filter": assignment,
+        "result_count": len(rows),
+        "results": rows,
+        "instructions": "Use marks_obtained and graded_question_count exactly as returned; do not recalculate marks.",
+    })
+
+
+@tool("get_student_question_breakdown", args_schema=StudentQuestionBreakdownInput)
+def get_student_question_breakdown(
+    student_ref: str,
+    assignment_id: Optional[int] = None,
+    assignment_ref: str = "",
+) -> str:
+    """Return per-question score rows for one resolved student assignment, with SQL-computed marks summary."""
+    teacher_id = _require_teacher_id()
+    if not teacher_id:
+        return json.dumps({"status": "error", "error": "teacher_id is not available in TA context"})
+
+    student_resolution = _resolve_student(student_ref)
+    early_response = _student_resolution_response(student_resolution)
+    if early_response:
+        return early_response
+    student = student_resolution["student"]
+
+    if assignment_id or assignment_ref.strip():
+        assignment_resolution = _resolve_assignment(assignment_id, assignment_ref)
+        early_response = _assignment_resolution_response(assignment_resolution)
+        if early_response:
+            return early_response
+        assignment = assignment_resolution["assignment"]
+    else:
+        result_payload = json.loads(get_student_result.invoke({"student_ref": student_ref}))
+        results = result_payload.get("results", [])
+        if len(results) != 1:
+            return json.dumps({
+                "status": "needs_assignment",
+                "student": _friendly_student(student),
+                "message": "Student has multiple or zero graded assignments. Ask which assignment to break down.",
+                "available_results": results,
+            })
+        assignment = {"id": results[0]["assignment_id"], "title": results[0]["assignment_title"]}
+
+    rows = _execute_readonly_query(
+        """
+        SELECT
+          sqs.question_label,
+          sqs.question_text,
+          sqs.student_solution,
+          sqs.marks::float AS marks,
+          sqs.confidence_score::float AS confidence_score,
+          sqs.ai_comment,
+          sqs.teacher_comment,
+          sqs.created_at,
+          sqs.updated_at
+        FROM public.student_question_scores sqs
+        WHERE sqs.teacher_id = %s
+          AND sqs.assignment_id = %s
+          AND (sqs.student_id = %s OR sqs.student_id = %s)
+        ORDER BY sqs.id ASC
+        """,
+        (teacher_id, assignment["id"], student["internal_student_uuid"], student["student_id"]),
+    )
+
+    marks_sum = sum(float(row.get("marks") or 0) for row in rows)
+    return json.dumps({
+        "status": "ok",
+        "evidence_query_used": True,
+        "student": _friendly_student(student),
+        "assignment": assignment,
+        "marks_obtained": marks_sum,
+        "graded_question_count": len(rows),
+        "question_breakdown": rows,
+        "instructions": "Use marks_obtained and graded_question_count exactly as returned; do not recalculate marks.",
+    })
+
+
+@tool("get_common_mistakes", args_schema=CommonMistakesInput)
+def get_common_mistakes(
+    assignment_id: Optional[int] = None,
+    assignment_ref: str = "",
+    student_ref: str = "",
+    limit: int = 10,
+) -> str:
+    """Return grouped AI-comment mistake patterns, optionally scoped to one assignment or student."""
+    teacher_id = _require_teacher_id()
+    if not teacher_id:
+        return json.dumps({"status": "error", "error": "teacher_id is not available in TA context"})
+
+    assignment = None
+    if assignment_id or assignment_ref.strip():
+        assignment_resolution = _resolve_assignment(assignment_id, assignment_ref)
+        early_response = _assignment_resolution_response(assignment_resolution)
+        if early_response:
+            return early_response
+        assignment = assignment_resolution["assignment"]
+
+    student = None
+    if student_ref.strip():
+        student_resolution = _resolve_student(student_ref)
+        early_response = _student_resolution_response(student_resolution)
+        if early_response:
+            return early_response
+        student = student_resolution["student"]
+
+    filters = ["sqs.teacher_id = %s", "sqs.ai_comment IS NOT NULL", "btrim(sqs.ai_comment) <> ''"]
+    params: list[Any] = [teacher_id]
+    if assignment:
+        filters.append("sqs.assignment_id = %s")
+        params.append(assignment["id"])
+    if student:
+        filters.append("(sqs.student_id = %s OR sqs.student_id = %s)")
+        params.extend([student["internal_student_uuid"], student["student_id"]])
+    params.append(limit)
+
+    rows = _execute_readonly_query(
+        f"""
+        SELECT
+          sqs.question_label,
+          sqs.ai_comment,
+          COUNT(*)::int AS affected_count,
+          AVG(sqs.marks)::float AS average_marks,
+          json_agg(
+            json_build_object(
+              'student_id', students.student_id,
+              'name', students.name,
+              'marks', sqs.marks
+            )
+            ORDER BY students.name ASC
+          ) AS affected_students
+        FROM public.student_question_scores sqs
+        LEFT JOIN public.students
+          ON students.teacher_id = sqs.teacher_id
+          AND (sqs.student_id = students.id::text OR sqs.student_id = students.student_id)
+        WHERE {' AND '.join(filters)}
+        GROUP BY sqs.question_label, sqs.ai_comment
+        ORDER BY affected_count DESC, sqs.question_label ASC
+        LIMIT %s
+        """,
+        tuple(params),
+    )
+
+    return json.dumps({
+        "status": "ok",
+        "evidence_query_used": True,
+        "assignment_filter": assignment,
+        "student_filter": _friendly_student(student) if student else None,
+        "mistake_count": len(rows),
+        "mistakes": rows,
+    })
+
+
 @tool("sql_db_list_tables")
 def sql_db_list_tables() -> str:
     """Return a comma-separated list of known public tables in the Assess-AI database."""
-    _log("sql_db_list_tables called")
     return ", ".join(f"public.{name}" for name in SCHEMA.keys())
 
 
@@ -404,7 +810,6 @@ def sql_db_list_tables() -> str:
 def sql_db_schema(table_names: str) -> str:
     """Return schema details and relationship hints for comma-separated Assess-AI table names."""
     requested_tables = _split_requested_tables(table_names)
-    _log(f"sql_db_schema requested_tables={requested_tables}")
     if not requested_tables:
         return json.dumps({"error": "At least one table name is required."})
 
@@ -449,12 +854,12 @@ def sql_db_query(query: str) -> str:
     try:
         cleaned_query = _validate_read_only_query(query)
     except ValueError as e:
-        _log(f"sql_db_query rejected error={e}")
+        _log(f"query rejected error={e}")
         return json.dumps({"error": str(e)})
 
     try:
         row_cap = _query_row_cap(cleaned_query)
-        _log(f"sql_db_query executing row_cap={row_cap} query={_preview_query(cleaned_query)}")
+        _log(f"query: {_preview_query(cleaned_query)}")
         with get_db_connection() as conn:
             conn.set_session(readonly=True, autocommit=True)
             with conn.cursor() as cur:
@@ -464,25 +869,32 @@ def sql_db_query(query: str) -> str:
                 result_limited = len(fetched_rows) > row_cap
                 rows = [_redact_row(dict(row)) for row in fetched_rows[:row_cap]]
                 columns = [description[0] for description in cur.description] if cur.description else []
-                _log(
-                    "sql_db_query completed "
-                    f"returned_rows={len(rows)} result_limited={result_limited} columns={columns}"
-                )
-                return json.dumps({
+                result = {
                     "columns": columns,
                     "row_count": len(rows),
                     "max_rows": MAX_RESULT_ROWS,
                     "result_limited": result_limited,
+                    "numeric_column_summaries": _numeric_column_summaries(rows),
                     "warning": (
                         "Result was capped by sql_db_query; do not compute totals from this partial result."
                         if result_limited
                         else ""
                     ),
                     "rows": rows,
-                })
+                }
+                result_json = json.dumps(result)
+                _log(f"result: {result_json}")
+                return result_json
     except Exception as e:
-        _log(f"sql_db_query error={e}")
+        _log(f"query error: {e}")
         return json.dumps({"error": str(e)})
 
 
-tools = [sql_db_list_tables, sql_db_schema, sql_db_query]
+tools = [
+    get_student_result,
+    get_student_question_breakdown,
+    get_common_mistakes,
+    sql_db_list_tables,
+    sql_db_schema,
+    sql_db_query,
+]
