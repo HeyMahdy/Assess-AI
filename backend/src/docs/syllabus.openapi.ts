@@ -12,7 +12,7 @@ export const syllabusPaths: Record<string, any> = {
     post: {
       tags: ['Syllabus GraphRAG'],
       summary: 'Upload a syllabus and trigger GraphRAG ingestion',
-      description: 'Accepts a PDF, DOCX, or TXT file. Extracts entities and relationships using AI, stores them with vector embeddings for semantic search.',
+      description: 'Accepts a PDF, DOCX, or TXT file scoped to a specific assignment. Extracts entities and relationships using AI, stores them with vector embeddings for semantic search. Re-uploading for the same assignment replaces the previous syllabus.',
       security: [{ bearerAuth: [] }],
       requestBody: {
         required: true,
@@ -20,12 +20,16 @@ export const syllabusPaths: Record<string, any> = {
           'multipart/form-data': {
             schema: {
               type: 'object',
-              required: ['file'],
+              required: ['file', 'assignment_id'],
               properties: {
                 file: {
                   type: 'string',
                   format: 'binary',
                   description: 'Syllabus file (PDF, DOCX, or TXT)',
+                },
+                assignment_id: {
+                  type: 'integer',
+                  description: 'The assignment this syllabus belongs to',
                 },
               },
             },
@@ -56,15 +60,15 @@ export const syllabusPaths: Record<string, any> = {
                 message: 'Syllabus upload accepted for processing',
                 data: {
                   syllabus_id: 1,
-                  status: 'completed',
-                  entity_count: 22,
-                  relationship_count: 18,
+                  status: 'processing',
+                  entity_count: 0,
+                  relationship_count: 0,
                 },
               },
             },
           },
         },
-        '400': { description: 'No file uploaded or text extraction failed', content: { 'application/json': { schema: syllabusErrorSchema } } },
+        '400': { description: 'No file uploaded, missing assignment_id, or text extraction failed', content: { 'application/json': { schema: syllabusErrorSchema } } },
         '401': { description: 'Unauthorized', content: { 'application/json': { schema: syllabusErrorSchema } } },
         '500': { description: 'Processing failed', content: { 'application/json': { schema: syllabusErrorSchema } } },
       },
@@ -176,7 +180,7 @@ export const syllabusPaths: Record<string, any> = {
     post: {
       tags: ['Syllabus GraphRAG'],
       summary: 'Query the syllabus using natural language',
-      description: 'Performs vector search to find matching topics, retrieves graph relationships, and synthesizes an answer using LLM.',
+      description: 'Performs vector search to find matching topics, retrieves graph relationships, and synthesizes an answer using LLM. Provide either syllabus_id or assignment_id to identify which syllabus to query.',
       security: [{ bearerAuth: [] }],
       requestBody: {
         required: true,
@@ -184,11 +188,16 @@ export const syllabusPaths: Record<string, any> = {
           'application/json': {
             schema: {
               type: 'object',
-              required: ['query', 'syllabus_id'],
+              required: ['query'],
               properties: {
                 query: { type: 'string', description: 'Natural language question about the syllabus' },
-                syllabus_id: { type: 'integer', description: 'The syllabus to query against' },
+                syllabus_id: { type: 'integer', description: 'The syllabus to query against (provide this OR assignment_id)', nullable: true },
+                assignment_id: { type: 'integer', description: 'The assignment whose syllabus to query (provide this OR syllabus_id)', nullable: true },
               },
+            },
+            example: {
+              query: 'What do I need to learn before Dynamic Programming?',
+              assignment_id: 1,
             },
           },
         },
@@ -206,19 +215,46 @@ export const syllabusPaths: Record<string, any> = {
                     type: 'object',
                     properties: {
                       answer: { type: 'string' },
-                      matched_entities: {
-                        type: 'array',
-                        items: {
-                          type: 'object',
-                          properties: {
-                            name: { type: 'string' },
-                            type: { type: 'string' },
-                            similarity: { type: 'number' },
+                      graph_context: {
+                        type: 'object',
+                        properties: {
+                          prerequisites: {
+                            type: 'array',
+                            items: {
+                              type: 'object',
+                              properties: {
+                                name: { type: 'string' },
+                                entity_type: { type: 'string' },
+                                difficulty_level: { type: 'string' },
+                              },
+                            },
+                          },
+                          dependents: {
+                            type: 'array',
+                            items: {
+                              type: 'object',
+                              properties: {
+                                name: { type: 'string' },
+                                entity_type: { type: 'string' },
+                                difficulty_level: { type: 'string' },
+                              },
+                            },
+                          },
+                          related: {
+                            type: 'array',
+                            items: {
+                              type: 'object',
+                              properties: {
+                                name: { type: 'string' },
+                                entity_type: { type: 'string' },
+                                difficulty_level: { type: 'string' },
+                                relationship_type: { type: 'string' },
+                                reason: { type: 'string' },
+                              },
+                            },
                           },
                         },
                       },
-                      prerequisites: { type: 'array', items: { type: 'string' } },
-                      related_topics: { type: 'array', items: { type: 'string' } },
                     },
                   },
                 },
@@ -226,8 +262,9 @@ export const syllabusPaths: Record<string, any> = {
             },
           },
         },
-        '400': { description: 'Missing query or syllabus_id', content: { 'application/json': { schema: syllabusErrorSchema } } },
+        '400': { description: 'Missing query or both syllabus_id and assignment_id', content: { 'application/json': { schema: syllabusErrorSchema } } },
         '401': { description: 'Unauthorized', content: { 'application/json': { schema: syllabusErrorSchema } } },
+        '404': { description: 'No completed syllabus found for the given assignment', content: { 'application/json': { schema: syllabusErrorSchema } } },
         '500': { description: 'Query failed', content: { 'application/json': { schema: syllabusErrorSchema } } },
       },
     },

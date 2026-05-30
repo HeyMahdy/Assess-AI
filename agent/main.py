@@ -410,6 +410,7 @@ async def upload_syllabus(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     teacher_id: str = Form(...),
+    assignment_id: int = Form(...),
 ):
     """Upload a syllabus and run the GraphRAG ingestion pipeline."""
     try:
@@ -422,12 +423,17 @@ async def upload_syllabus(
         if not raw_text.strip():
             raise HTTPException(status_code=400, detail="Could not extract text from file.")
 
-        # Create syllabus record
+        # Create syllabus record (scoped to assignment)
         with get_db_connection() as conn:
             with conn.cursor() as cur:
+                # Delete existing syllabus for this assignment (replace on re-upload)
                 cur.execute(
-                    "INSERT INTO public.syllabi (teacher_id, filename, raw_text, status) VALUES (%s, %s, %s, 'processing') RETURNING id",
-                    (teacher_id, file.filename, raw_text)
+                    "DELETE FROM public.syllabi WHERE assignment_id = %s",
+                    (assignment_id,)
+                )
+                cur.execute(
+                    "INSERT INTO public.syllabi (teacher_id, assignment_id, filename, raw_text, status) VALUES (%s, %s, %s, %s, 'processing') RETURNING id",
+                    (teacher_id, assignment_id, file.filename, raw_text)
                 )
                 syllabus_id = cur.fetchone()["id"]
                 conn.commit()
@@ -501,14 +507,35 @@ async def get_syllabus_graph(syllabus_id: int):
 
 class QueryRequest(BaseModel):
     query: str
-    syllabus_id: int
+    syllabus_id: int = None
+    assignment_id: int = None
 
 @app.post("/internal/agent/syllabus/query")
 async def query_syllabus(request: QueryRequest):
-    """Query the GraphRAG system."""
+    """Query the GraphRAG system. Accepts either syllabus_id or assignment_id."""
     try:
-        result = await query_graphrag(request.syllabus_id, request.query)
+        syllabus_id = request.syllabus_id
+
+        # Resolve syllabus_id from assignment_id if not provided directly
+        if not syllabus_id and request.assignment_id:
+            with get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT id FROM public.syllabi WHERE assignment_id = %s AND status = 'completed'",
+                        (request.assignment_id,)
+                    )
+                    row = cur.fetchone()
+                    if not row:
+                        raise HTTPException(status_code=404, detail="No completed syllabus found for this assignment")
+                    syllabus_id = row["id"]
+
+        if not syllabus_id:
+            raise HTTPException(status_code=400, detail="Either syllabus_id or assignment_id is required")
+
+        result = await query_graphrag(syllabus_id, request.query)
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"{e.__class__.__name__}: {e}")

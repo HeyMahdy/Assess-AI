@@ -125,7 +125,9 @@ async def extract_relationships(entities: List[Dict]) -> List[Dict[str, Any]]:
     # Format entities for the prompt
     entity_names = [e["name"] for e in entities]
     entities_json = json.dumps(
-        [{"name": e["name"], "type": e.get("type", "topic"), "description": e.get("description", "")}
+        [{"name": e["name"], "type": e.get("type", "topic"), "description": e.get("description", ""),
+          "week_or_unit": e.get("week_or_unit", "Unknown"),
+          "difficulty_level": e.get("difficulty_level", "Unknown")}
          for e in entities],
         indent=2
     )
@@ -143,7 +145,7 @@ For each relationship, output a JSON object with:
 - reason: One sentence explaining why this relationship exists
 
 RELATIONSHIP TYPE DEFINITIONS:
-- PREREQUISITE_OF: source must be learned before target
+- PREREQUISITE_OF: source must be learned before target. (HINT: Use 'week_or_unit' and 'difficulty_level' to infer this. Earlier weeks are usually prerequisites for later weeks. Beginner topics are prerequisites for intermediate/advanced ones.)
 - PART_OF: source is a subtopic/component of target
 - RELATED_TO: source and target are conceptually related
 - LEADS_TO: learning source naturally leads to target

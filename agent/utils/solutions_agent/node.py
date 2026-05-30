@@ -6,7 +6,6 @@ from langgraph.graph import StateGraph, START, END
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 from langgraph.prebuilt import ToolNode
-from utils.document_content import build_document_human_content
 from .tools import tools
 from .state import AgentState
 from .prompt import SOLUTION_PROMPT, system_prompt
@@ -14,7 +13,7 @@ from .prompt import SOLUTION_PROMPT, system_prompt
 load_dotenv()
 
 # 1. Initialize LLMs
-llm = ChatOpenAI(model="gpt-4o", temperature=0)
+llm = ChatOpenAI(model="gpt-5.4-mini", temperature=0)
 
 # CRITICAL FIX: The saving agent MUST have tools bound to it!
 agent_llm = llm.bind_tools(tools)
@@ -33,16 +32,27 @@ def dynamic_extract_node(state: AgentState):
         
     messages = [SystemMessage(content=active_prompt)]
     
-    # 2. Build a mixed image/PDF-text payload for the LLM.
-    human_content = build_document_human_content(
-        state.get("files", []),
-        (
-            "Look at this document and transcribe ONLY the solutions that are PHYSICALLY VISIBLE. "
-            "Do NOT invent or generate any solutions that are not written in the document. "
-            "If you see only 1 solution, output only 1. "
-            "Wrap all math in LaTeX ($...$)."
-        ),
-    )
+    # 2. Build the list of images for the Vision LLM
+    human_content = [
+        {
+            "type": "text", 
+            "text": (
+                "CRITICAL ASSIGNMENT: Transcribe EVERY SINGLE solution "
+                "from these images. Wrap all mathematical expressions, fractions, formulas, "
+                "and symbols inside standard inline LaTeX ($...$) to ensure character-level accuracy. "
+                "Do not skip any solutions."
+            )
+        }
+    ]
+
+    # Loop through all uploaded images and append them into human_content
+    if "files" in state and state["files"]:
+        for item in state["files"]:
+            image_data_url = item["content"]
+            human_content.append({
+                "type": "image_url", 
+                "image_url": {"url": image_data_url}
+            })
             
     # 3. Wrap everything inside a single HumanMessage and send it to the AI
     messages.append(HumanMessage(content=human_content))

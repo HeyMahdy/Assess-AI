@@ -43,7 +43,7 @@ async def get_graph_context(syllabus_id: int, entity_ids: List[int]) -> Dict[str
         FROM public.syllabus_relationships r
         JOIN public.syllabus_entities e ON e.id = r.source_entity_id
         WHERE r.target_entity_id = ANY(%s)
-        AND r.relationship_type = 'PREREQUISITE_OF'
+        AND r.relationship_type IN ('RELATED_TO', 'PART_OF')
         AND r.syllabus_id = %s;
     """
 
@@ -53,11 +53,11 @@ async def get_graph_context(syllabus_id: int, entity_ids: List[int]) -> Dict[str
         FROM public.syllabus_relationships r
         JOIN public.syllabus_entities e ON e.id = r.target_entity_id
         WHERE r.source_entity_id = ANY(%s)
-        AND r.relationship_type = 'PREREQUISITE_OF'
+        AND r.relationship_type IN ('RELATED_TO', 'PART_OF')
         AND r.syllabus_id = %s;
     """
 
-    # Get related topics
+    # Get related topics (other relationship types)
     related_sql = """
         SELECT DISTINCT e.name, e.entity_type, e.difficulty_level, r.relationship_type, r.reason
         FROM public.syllabus_relationships r
@@ -66,7 +66,7 @@ async def get_graph_context(syllabus_id: int, entity_ids: List[int]) -> Dict[str
             OR (e.id = r.target_entity_id AND r.source_entity_id = ANY(%s))
         )
         WHERE r.syllabus_id = %s
-        AND r.relationship_type != 'PREREQUISITE_OF';
+        AND r.relationship_type NOT IN ('RELATED_TO', 'PART_OF');
     """
 
     with get_db_connection() as conn:
@@ -129,10 +129,7 @@ async def query_graphrag(syllabus_id: int, query: str) -> Dict[str, Any]:
     if not matched:
         return {
             "answer": "No relevant topics found in this syllabus for your query.",
-            "matched_entities": [],
-            "prerequisites": [],
-            "related_topics": [],
-            "graph_context": {}
+            "graph_context": {"prerequisites": [], "dependents": [], "related": []}
         }
 
     entity_ids = [m["id"] for m in matched]
@@ -161,9 +158,6 @@ async def query_graphrag(syllabus_id: int, query: str) -> Dict[str, Any]:
 
     return {
         "answer": response.content,
-        "matched_entities": [{"name": m["name"], "type": m["entity_type"], "similarity": round(float(m.get("similarity", 0)), 3)} for m in matched],
-        "prerequisites": [p["name"] for p in graph_ctx["prerequisites"]],
-        "related_topics": [r["name"] for r in graph_ctx["related"]],
         "graph_context": graph_ctx,
     }
 

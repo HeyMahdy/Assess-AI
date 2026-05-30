@@ -16,14 +16,20 @@ export const uploadSyllabus = async (req: Request, res: Response) => {
     }
 
     const file = (req as any).file as any;
+    const { assignment_id } = req.body;
 
     if (!file) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
+    if (!assignment_id) {
+      return res.status(400).json({ error: 'assignment_id is required' });
+    }
+
     const formData = new FormData();
     formData.append('file', file.buffer, file.originalname);
     formData.append('teacher_id', teacherId);
+    formData.append('assignment_id', String(assignment_id));
 
     const response = await axios.post(`${FASTAPI_URL}/internal/agent/syllabus/upload`, formData, {
       headers: { ...formData.getHeaders() },
@@ -104,20 +110,21 @@ export const getSyllabusGraph = async (req: Request, res: Response) => {
  */
 export const querySyllabus = async (req: Request, res: Response) => {
   try {
-    const { query, syllabus_id } = req.body;
+    const { query, syllabus_id, assignment_id } = req.body;
     const teacherId = req.authUser?.id;
 
     if (!teacherId) {
       return res.status(401).json({ error: 'Unauthorized: Missing teacher identity' });
     }
 
-    if (!query || !syllabus_id) {
-      return res.status(400).json({ error: 'query and syllabus_id are required' });
+    if (!query || (!syllabus_id && !assignment_id)) {
+      return res.status(400).json({ error: 'query and either syllabus_id or assignment_id are required' });
     }
 
     const response = await axios.post(`${FASTAPI_URL}/internal/agent/syllabus/query`, {
       query,
-      syllabus_id: Number(syllabus_id),
+      ...(syllabus_id ? { syllabus_id: Number(syllabus_id) } : {}),
+      ...(assignment_id ? { assignment_id: Number(assignment_id) } : {}),
     });
 
     return res.status(200).json({
