@@ -182,6 +182,72 @@ export const getStudentById = async (req: Request, res: Response) => {
 };
 
 /**
+ * Get all assignments for a student with total marks obtained
+ */
+export const getStudentAssignmentsWithMarks = async (req: Request, res: Response) => {
+  try {
+    const { studentId } = req.params;
+    const teacherId = req.authUser?.id;
+
+    if (!teacherId) {
+      return res.status(401).json({ error: 'Unauthorized: Missing teacher identity' });
+    }
+
+    const studentQuery = `
+      SELECT teacher_id, id, student_id, name, created_at
+      FROM public.students
+      WHERE teacher_id = $1 AND id = $2;
+    `;
+
+    const studentResult = await pool.query(studentQuery, [teacherId, studentId]);
+
+    if (!studentResult.rows || studentResult.rows.length === 0) {
+      return res.status(404).json({
+        error: 'Student not found or you are not authorized to view it'
+      });
+    }
+
+    const assignmentsQuery = `
+      SELECT
+        assignments.id as assignment_id,
+        assignments.title,
+        assignments.subject,
+        assignments.total_marks as assignment_total_marks,
+        COALESCE(score_totals.marks_obtained, 0)::float as marks_obtained,
+        COALESCE(score_totals.graded_question_count, 0)::int as graded_question_count,
+        assignments.created_at
+      FROM public.assignments
+      LEFT JOIN (
+        SELECT
+          assignment_id,
+          SUM(marks)::float as marks_obtained,
+          COUNT(*)::int as graded_question_count
+        FROM public.student_question_scores
+        WHERE teacher_id = $1 AND student_id = $2
+        GROUP BY assignment_id
+      ) score_totals ON score_totals.assignment_id = assignments.id
+      WHERE assignments.teacher_id = $1
+      ORDER BY assignments.created_at DESC;
+    `;
+
+    const assignmentsResult = await pool.query(assignmentsQuery, [teacherId, studentId]);
+
+    return res.status(200).json({
+      message: 'Student assignment marks retrieved successfully',
+      student: studentResult.rows[0],
+      data: assignmentsResult.rows
+    });
+
+  } catch (error: any) {
+    console.error('Error fetching student assignment marks:', error.message);
+    return res.status(500).json({
+      error: 'Database error',
+      details: error.message
+    });
+  }
+};
+
+/**
  * Update a student's information
  */
 export const updateStudent = async (req: Request, res: Response) => {
