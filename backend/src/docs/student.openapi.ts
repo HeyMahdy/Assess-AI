@@ -19,6 +19,27 @@ const studentErrorSchema = {
   required: ['error'],
 } as const;
 
+const studentAssignmentMarksSchema = {
+  type: 'object',
+  properties: {
+    assignment_id: { type: 'integer' },
+    title: { type: 'string' },
+    subject: { type: 'string', nullable: true },
+    assignment_total_marks: { type: 'number', nullable: true },
+    marks_obtained: { type: 'number' },
+    graded_question_count: { type: 'integer' },
+    created_at: { type: 'string', format: 'date-time' },
+  },
+  required: [
+    'assignment_id',
+    'title',
+    'assignment_total_marks',
+    'marks_obtained',
+    'graded_question_count',
+    'created_at',
+  ],
+} as const;
+
 export const studentPaths: Record<string, any> = {
   '/students': {
     post: {
@@ -309,6 +330,77 @@ export const studentPaths: Record<string, any> = {
                   data: studentSchema,
                 },
                 required: ['message', 'data'],
+              },
+            },
+          },
+        },
+        '401': {
+          description: 'Unauthorized: Missing teacher identity',
+          content: { 'application/json': { schema: studentErrorSchema } },
+        },
+        '404': {
+          description: 'Not Found: Student not found or unauthorized',
+          content: { 'application/json': { schema: studentErrorSchema } },
+        },
+        '500': {
+          description: 'Internal Server Error: Database error',
+          content: { 'application/json': { schema: studentErrorSchema } },
+        },
+      },
+    },
+  },
+  '/students/{studentId}/assignments': {
+    get: {
+      tags: ['Students'],
+      summary: 'Get a student\'s assignments with marks',
+      description: 'Retrieves every assignment owned by the authenticated teacher and the total marks this student received for each assignment. Ungraded assignments return 0 marks.',
+      security: [{ bearerAuth: [] }],
+      parameters: [
+        {
+          name: 'studentId',
+          in: 'path',
+          required: true,
+          schema: { type: 'string', format: 'uuid' },
+          description: 'The student UUID primary key',
+        },
+      ],
+      responses: {
+        '200': {
+          description: 'Student assignment marks retrieved successfully',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  message: { type: 'string' },
+                  student: studentSchema,
+                  data: {
+                    type: 'array',
+                    items: studentAssignmentMarksSchema,
+                  },
+                },
+                required: ['message', 'student', 'data'],
+              },
+              example: {
+                message: 'Student assignment marks retrieved successfully',
+                student: {
+                  teacher_id: '7d0d2c5f-3b95-4f43-8fd6-19a2939b7a13',
+                  id: '84e2c2b8-f5a4-4e34-943b-1ef82f804d9c',
+                  student_id: 'S-1001',
+                  name: 'Student Name',
+                  created_at: '2026-05-30T10:00:00.000Z',
+                },
+                data: [
+                  {
+                    assignment_id: 12,
+                    title: 'Physics Assignment',
+                    subject: 'Physics',
+                    assignment_total_marks: 50,
+                    marks_obtained: 42.5,
+                    graded_question_count: 5,
+                    created_at: '2026-05-30T10:00:00.000Z',
+                  },
+                ],
               },
             },
           },

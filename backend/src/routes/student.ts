@@ -4,6 +4,7 @@ import {
   getStudentsByTeacher, 
   searchStudents,
   getStudentById, 
+  getStudentAssignmentsWithMarks,
   updateStudent, 
   deleteStudent 
 } from '../controllers/studentController.js';
@@ -22,6 +23,9 @@ studentRouter.get('/students', getStudentsByTeacher);
 
 // Search students by student ID and/or name
 studentRouter.get('/students/search', searchStudents);
+
+// Get all assignments and marks for a specific student
+studentRouter.get('/students/:studentId/assignments', getStudentAssignmentsWithMarks);
 
 // Get a specific student by ID
 studentRouter.get('/students/:studentId', getStudentById);
