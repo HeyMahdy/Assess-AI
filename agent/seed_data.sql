@@ -407,6 +407,13 @@ ON public.questions(assignment_id);
 CREATE INDEX idx_rubrics_assignment
 ON public.rubrics(assignment_id);
 
+CREATE UNIQUE INDEX rubrics_teacher_assignment_question_label_unique
+ON public.rubrics (
+  teacher_id,
+  assignment_id,
+  regexp_replace(lower(question_label), '\s+', '', 'g')
+);
+
 CREATE INDEX idx_student_answers_assignment
 ON public.student_answers(assignment_id);
 
@@ -486,4 +493,3 @@ CREATE INDEX idx_entities_embedding ON public.syllabus_entities USING ivfflat (e
 CREATE INDEX idx_relationships_syllabus ON public.syllabus_relationships(syllabus_id);
 CREATE INDEX idx_relationships_source ON public.syllabus_relationships(source_entity_id);
 CREATE INDEX idx_relationships_target ON public.syllabus_relationships(target_entity_id);
-

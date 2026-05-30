@@ -1,4 +1,5 @@
 import json
+import re
 from typing import TypedDict
 from dotenv import load_dotenv
 
@@ -21,6 +22,26 @@ agent_llm = llm.bind_tools(tools)
 
 # 2. Tool Node
 tool_node = ToolNode(tools)  
+
+
+def _question_label_key(question_label: object) -> str:
+    """Normalize labels just enough to catch spacing/case duplicates."""
+    return re.sub(r"\s+", "", str(question_label or "")).lower()
+
+
+def _dedupe_rubrics_by_question_label(rubrics_list: list) -> list:
+    seen_labels = set()
+    unique_rubrics = []
+
+    for rubric in rubrics_list:
+        label_key = _question_label_key(rubric.get("question_label") if isinstance(rubric, dict) else None)
+        if not label_key or label_key in seen_labels:
+            continue
+
+        seen_labels.add(label_key)
+        unique_rubrics.append(rubric)
+
+    return unique_rubrics
 
 # ---------------------------------------------------------
 # NODE 1: The Rubrics Extractor
@@ -81,7 +102,7 @@ def save_with_agent(state: AgentState):
         parsed_data = json.loads(raw_json_string)
         
         # 🚨 RUBRIC-SPECIFIC TARGETING: Extract the "rubrics" array instead of "questions"
-        rubrics_list = parsed_data.get("rubrics", [])
+        rubrics_list = _dedupe_rubrics_by_question_label(parsed_data.get("rubrics", []))
         formatted_rubrics_block = json.dumps(rubrics_list, indent=2)
         
         initial_instruction = system_prompt.format(

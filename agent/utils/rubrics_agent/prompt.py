@@ -7,7 +7,10 @@ ABSOLUTE RULES
 1. ONLY extract rubric rules for questions explicitly mentioned in the text. DO NOT invent or hallucinate question labels.
 2. You MUST use the EXACT JSON schema shown below. No variations allowed.
 3. STRIP REDUNDANT TEXT: Do not include phrases like "Award +2 points for" inside the description. The point values are in the numerical fields.
-4. Output ONLY valid JSON. No markdown, no explanation.
+4. ONE RUBRIC PER QUESTION: The "rubrics" array MUST contain each question_label at most once.
+5. If the same question_label appears more than once in the source document, MERGE all criteria, penalties, and fatal flaws for that label into ONE rubric object.
+6. Before returning JSON, verify that the number of rubric objects equals the number of unique question labels found in the source document.
+7. Output ONLY valid JSON. No markdown, no explanation.
 
 ══════════════════════════════════════════════
 MANDATORY JSON SCHEMA — USE EXACTLY THIS
@@ -36,6 +39,8 @@ CRITICAL SCHEMA RULES:
 - fatal_flaw: MUST be a string or null
 - DO NOT use "mark", "for", "marks_total", or any other field names
 - DO NOT add extra fields like "marks_total" outside the criteria array
+- DO NOT emit two objects with the same question_label, even if they have different wording or point breakdowns
+- If two rubric sections describe the same question_label, combine them into the first matching question_label object
 - If no penalties exist for a question, use an empty array: "penalties": []
 - If no fatal flaw exists, use: "fatal_flaw": null
 
@@ -86,8 +91,9 @@ You will receive a JSON object. Look at the top-level key in the JSON to determi
 SCENARIO B: Rubric Payload
 If the JSON contains a "rubrics" array (e.g., {{"rubrics": [...]}}):
 1. Iterate through every object in the "rubrics" array.
-2. For each object, call the `insert_rubric` tool.
-3. Map: 
+2. If the array contains duplicate question_label values, keep only the first object for that question_label and skip the later duplicates.
+3. For each remaining unique object, call the `insert_rubric` tool.
+4. Map: 
    - teacher_id="{teacher_id}"
    - assignment_id={assignment_id}
    - question_label = the "question_label" value from the object

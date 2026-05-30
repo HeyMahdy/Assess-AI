@@ -40,6 +40,10 @@ def _backend_get(path: str) -> str:
         return json.dumps({"error": str(e)})
 
 
+def _backend_get_json(path: str) -> dict:
+    return json.loads(_backend_get(path))
+
+
 def _backend_post(path: str, payload: dict) -> str:
     headers = _backend_headers()
     if not headers:
@@ -97,6 +101,43 @@ class StudentAssignmentPerformanceInput(BaseModel):
 def get_student_assignment_performance(student_ref: str, assignment_id: int) -> str:
     """Get one student's scores, AI comments, teacher comments, extracted weaknesses, and syllabus availability for one assignment."""
     return _backend_get(f"/ta/context/students/{quote(student_ref, safe='')}/assignments/{assignment_id}/performance")
+
+
+@tool("get_prerequisite_review_context", args_schema=StudentAssignmentPerformanceInput)
+def get_prerequisite_review_context(student_ref: str, assignment_id: int) -> str:
+    """Get score-derived weaknesses for one student assignment and query the assignment syllabus for prerequisite review topics."""
+    performance = _backend_get_json(
+        f"/ta/context/students/{quote(student_ref, safe='')}/assignments/{assignment_id}/performance"
+    )
+    if performance.get("error"):
+        return json.dumps(performance)
+
+    data = performance.get("data", {})
+    weaknesses = [item for item in data.get("weaknesses", []) if item]
+    scores = data.get("scores", [])
+
+    if weaknesses:
+        syllabus_query = "Student weaknesses from grading comments: " + " ".join(weaknesses)
+    else:
+        low_score_labels = [
+            str(score.get("question_label"))
+            for score in scores
+            if score.get("marks") is not None and float(score.get("marks") or 0) <= 1
+        ]
+        syllabus_query = "Student struggled on these low-scoring questions: " + ", ".join(low_score_labels)
+
+    prerequisite_result = None
+    if scores:
+        prerequisite_result = json.loads(query_syllabus.invoke({
+            "search_query": syllabus_query,
+            "assignment_id": assignment_id,
+        }))
+
+    return json.dumps({
+        "performance": data,
+        "score_derived_weakness_query": syllabus_query if scores else "",
+        "syllabus_prerequisites": prerequisite_result,
+    })
 
 
 class AssignmentMistakesInput(BaseModel):
@@ -418,7 +459,7 @@ def query_syllabus(search_query: str, assignment_id: int) -> str:
         response = httpx.post(
             f"{AGENT_BASE_URL}/internal/agent/syllabus/query",
             json={"query": search_query, "assignment_id": assignment_id},
-            timeout=30.0,
+            timeout=90.0,
         )
 
         if response.status_code == 404:
@@ -438,6 +479,7 @@ tools = [
     get_student_overview,
     get_assignment_overview,
     get_student_assignment_performance,
+    get_prerequisite_review_context,
     get_assignment_mistakes,
     get_student_weak_concepts,
     search_student,
