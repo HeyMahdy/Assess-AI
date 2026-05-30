@@ -82,6 +82,85 @@ export const getGradingResults = async (req: Request, res: Response) => {
 };
 
 /**
+ * Get submitted students for an assignment with total marks obtained
+ */
+export const getAssignmentSubmittedStudentsScores = async (req: Request, res: Response) => {
+  try {
+    const { assignmentId } = req.params;
+    const teacherId = req.authUser?.id;
+
+    if (!teacherId) {
+      return res.status(401).json({ error: 'Unauthorized: Missing teacher identity' });
+    }
+
+    const assignmentQuery = `
+      SELECT id as assignment_id, title, subject, total_marks as assignment_total_marks
+      FROM public.assignments
+      WHERE id = $1 AND teacher_id = $2;
+    `;
+
+    const assignmentResult = await pool.query(assignmentQuery, [assignmentId, teacherId]);
+
+    if (!assignmentResult.rows || assignmentResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Assignment not found or you are not authorized to view it' });
+    }
+
+    const submittedStudentsQuery = `
+      SELECT
+        students.id,
+        students.student_id,
+        students.name,
+        COALESCE(score_totals.marks_obtained, 0)::float as marks_obtained,
+        assignments.total_marks as assignment_total_marks,
+        submissions.submitted_question_count::int as submitted_question_count,
+        COALESCE(score_totals.graded_question_count, 0)::int as graded_question_count,
+        submissions.latest_submission_at
+      FROM (
+        SELECT
+          student_id,
+          COUNT(DISTINCT question_label)::int as submitted_question_count,
+          MAX(created_at) as latest_submission_at
+        FROM public.student_answers
+        WHERE assignment_id = $1 AND teacher_id = $2
+        GROUP BY student_id
+      ) submissions
+      INNER JOIN public.students
+        ON students.id = submissions.student_id
+        AND students.teacher_id = $2
+      INNER JOIN public.assignments
+        ON assignments.id = $1
+        AND assignments.teacher_id = $2
+      LEFT JOIN (
+        SELECT
+          student_id,
+          SUM(marks)::float as marks_obtained,
+          COUNT(*)::int as graded_question_count
+        FROM public.student_question_scores
+        WHERE assignment_id = $1 AND teacher_id = $2
+        GROUP BY student_id
+      ) score_totals ON score_totals.student_id = students.id
+      ORDER BY students.name ASC;
+    `;
+
+    const submittedStudentsResult = await pool.query(submittedStudentsQuery, [assignmentId, teacherId]);
+
+    return res.status(200).json({
+      message: 'Assignment submitted students scores retrieved successfully',
+      assignment: assignmentResult.rows[0],
+      count: submittedStudentsResult.rowCount ?? submittedStudentsResult.rows.length,
+      data: submittedStudentsResult.rows
+    });
+
+  } catch (error: any) {
+    console.error('Error fetching assignment submitted student scores:', error.message);
+    return res.status(500).json({
+      error: 'Database error',
+      details: error.message
+    });
+  }
+};
+
+/**
  * Update a stored grading result after teacher review
  */
 export const updateGradingResult = async (req: Request, res: Response) => {

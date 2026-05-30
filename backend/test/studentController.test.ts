@@ -9,7 +9,7 @@ jest.unstable_mockModule('../src/lib/database.js', () => ({
   },
 }));
 
-const { getStudentAssignmentsWithMarks } = await import('../src/controllers/studentController.js');
+const { getStudentAssignmentGrades, getStudentAssignmentsWithMarks } = await import('../src/controllers/studentController.js');
 
 const createResponse = () => {
   const res = {
@@ -134,6 +134,102 @@ describe('getStudentAssignmentsWithMarks', () => {
     const res = createResponse();
 
     await getStudentAssignmentsWithMarks(createRequest(), res);
+
+    expect(queryMock).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Unauthorized: Missing teacher identity' });
+  });
+});
+
+describe('getStudentAssignmentGrades', () => {
+  beforeEach(() => {
+    queryMock.mockReset();
+  });
+
+  it('returns only graded assignments with summed student marks', async () => {
+    const student = {
+      teacher_id: 'teacher-uuid',
+      id: 'student-uuid',
+      student_id: 'S-1001',
+      name: 'Student Name',
+      created_at: '2026-05-30T10:00:00.000Z',
+    };
+    const grades = [
+      {
+        assignment_id: 12,
+        title: 'Physics Assignment',
+        subject: 'Physics',
+        assignment_total_marks: 50,
+        marks_obtained: 42.5,
+        graded_question_count: 5,
+        created_at: '2026-05-30T10:00:00.000Z',
+      },
+    ];
+
+    queryMock
+      .mockResolvedValueOnce({ rows: [student] })
+      .mockResolvedValueOnce({ rowCount: grades.length, rows: grades });
+
+    const res = createResponse();
+
+    await getStudentAssignmentGrades(createRequest('teacher-uuid'), res);
+
+    expect(queryMock).toHaveBeenCalledTimes(2);
+    expect(queryMock).toHaveBeenNthCalledWith(1, expect.any(String), ['teacher-uuid', 'student-uuid']);
+    expect(queryMock).toHaveBeenNthCalledWith(2, expect.any(String), ['teacher-uuid', 'student-uuid']);
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({
+      message: 'Student assignment grades retrieved successfully',
+      student,
+      count: grades.length,
+      data: grades,
+    });
+  });
+
+  it('excludes ungraded assignments', async () => {
+    const student = {
+      teacher_id: 'teacher-uuid',
+      id: 'student-uuid',
+      student_id: 'S-1001',
+      name: 'Student Name',
+      created_at: '2026-05-30T10:00:00.000Z',
+    };
+
+    queryMock
+      .mockResolvedValueOnce({ rows: [student] })
+      .mockResolvedValueOnce({ rowCount: 0, rows: [] });
+
+    const res = createResponse();
+
+    await getStudentAssignmentGrades(createRequest('teacher-uuid'), res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({
+      message: 'Student assignment grades retrieved successfully',
+      student,
+      count: 0,
+      data: [],
+    });
+  });
+
+  it('returns 404 when the student does not belong to the teacher', async () => {
+    queryMock.mockResolvedValueOnce({ rows: [] });
+
+    const res = createResponse();
+
+    await getStudentAssignmentGrades(createRequest('teacher-uuid'), res);
+
+    expect(queryMock).toHaveBeenCalledTimes(1);
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({
+      error: 'Student not found or you are not authorized to view it',
+    });
+  });
+
+  it('returns 401 when the authenticated teacher identity is missing', async () => {
+    const res = createResponse();
+
+    await getStudentAssignmentGrades(createRequest(), res);
 
     expect(queryMock).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(401);

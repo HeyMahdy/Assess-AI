@@ -22,6 +22,30 @@ const gradingErrorSchema = {
   required: ['error'],
 };
 
+const assignmentSubmittedStudentScoreSchema = {
+  type: 'object',
+  properties: {
+    id: { type: 'string', format: 'uuid' },
+    student_id: { type: 'string' },
+    name: { type: 'string' },
+    marks_obtained: { type: 'number' },
+    assignment_total_marks: { type: 'number', nullable: true },
+    submitted_question_count: { type: 'integer' },
+    graded_question_count: { type: 'integer' },
+    latest_submission_at: { type: 'string', format: 'date-time' },
+  },
+  required: [
+    'id',
+    'student_id',
+    'name',
+    'marks_obtained',
+    'assignment_total_marks',
+    'submitted_question_count',
+    'graded_question_count',
+    'latest_submission_at',
+  ],
+};
+
 export const gradingPaths: Record<string, any> = {
   '/assignments/{assignmentId}/students/{studentId}/grade': {
     post: {
@@ -64,6 +88,83 @@ export const gradingPaths: Record<string, any> = {
         },
         '401': { description: 'Unauthorized', content: { 'application/json': { schema: gradingErrorSchema } } },
         '500': { description: 'Grading failed', content: { 'application/json': { schema: gradingErrorSchema } } },
+      },
+    },
+  },
+  '/assignments/{assignmentId}/students/scores': {
+    get: {
+      tags: ['Grading'],
+      summary: 'List submitted students with assignment scores',
+      description: 'Lists students who submitted answers for an assignment and includes total marks when grading results exist.',
+      security: [{ bearerAuth: [] }],
+      parameters: [
+        { name: 'assignmentId', in: 'path', required: true, schema: { type: 'string' } },
+      ],
+      responses: {
+        '200': {
+          description: 'Assignment submitted students scores retrieved successfully',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  message: { type: 'string' },
+                  assignment: {
+                    type: 'object',
+                    properties: {
+                      assignment_id: { type: 'integer' },
+                      title: { type: 'string' },
+                      subject: { type: 'string' },
+                      assignment_total_marks: { type: 'number', nullable: true },
+                    },
+                    required: ['assignment_id', 'title', 'subject', 'assignment_total_marks'],
+                  },
+                  count: { type: 'integer' },
+                  data: {
+                    type: 'array',
+                    items: assignmentSubmittedStudentScoreSchema,
+                  },
+                },
+                required: ['message', 'assignment', 'count', 'data'],
+              },
+              example: {
+                message: 'Assignment submitted students scores retrieved successfully',
+                assignment: {
+                  assignment_id: 12,
+                  title: 'Physics Assignment',
+                  subject: 'Physics',
+                  assignment_total_marks: 50,
+                },
+                count: 2,
+                data: [
+                  {
+                    id: '6b9e1a78-f731-4fd9-b8d9-61c0f047b65c',
+                    student_id: 'S-1001',
+                    name: 'Student Name',
+                    marks_obtained: 42.5,
+                    assignment_total_marks: 50,
+                    submitted_question_count: 5,
+                    graded_question_count: 5,
+                    latest_submission_at: '2026-05-29T17:25:38.376Z',
+                  },
+                  {
+                    id: '1bc92a31-50f8-48ea-9062-cc9063b81810',
+                    student_id: 'S-1002',
+                    name: 'Ungraded Student',
+                    marks_obtained: 0,
+                    assignment_total_marks: 50,
+                    submitted_question_count: 5,
+                    graded_question_count: 0,
+                    latest_submission_at: '2026-05-29T17:28:38.376Z',
+                  },
+                ],
+              },
+            },
+          },
+        },
+        '401': { description: 'Unauthorized', content: { 'application/json': { schema: gradingErrorSchema } } },
+        '404': { description: 'Assignment not found or unauthorized', content: { 'application/json': { schema: gradingErrorSchema } } },
+        '500': { description: 'Database error', content: { 'application/json': { schema: gradingErrorSchema } } },
       },
     },
   },

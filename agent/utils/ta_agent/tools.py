@@ -113,6 +113,171 @@ def get_student_scores(assignment_id: int, student_id: str, teacher_id: str) -> 
         return json.dumps({"error": str(e)})
 
 
+class GetStudentAssignmentGradesInput(BaseModel):
+    student_id: str = Field(..., description="The student UUID")
+    teacher_id: str = Field(..., description="The teacher's UUID")
+
+
+@tool("get_student_assignment_grades", args_schema=GetStudentAssignmentGradesInput)
+def get_student_assignment_grades(student_id: str, teacher_id: str) -> str:
+    """Lists all graded assignments for a student with total marks per assignment."""
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """SELECT teacher_id, id, student_id, name, created_at
+                       FROM public.students
+                       WHERE teacher_id = %s AND id = %s""",
+                    (teacher_id, student_id),
+                )
+                student = cur.fetchone()
+
+                if not student:
+                    return json.dumps({"error": "Student not found or you are not authorized to view it."})
+
+                cur.execute(
+                    """SELECT
+                         assignments.id as assignment_id,
+                         assignments.title,
+                         assignments.subject,
+                         assignments.total_marks as assignment_total_marks,
+                         score_totals.marks_obtained::float as marks_obtained,
+                         score_totals.graded_question_count::int as graded_question_count,
+                         assignments.created_at
+                       FROM (
+                         SELECT
+                           assignment_id,
+                           SUM(marks)::float as marks_obtained,
+                           COUNT(*)::int as graded_question_count
+                         FROM public.student_question_scores
+                         WHERE teacher_id = %s AND student_id = %s
+                         GROUP BY assignment_id
+                       ) score_totals
+                       INNER JOIN public.assignments
+                         ON assignments.id = score_totals.assignment_id
+                         AND assignments.teacher_id = %s
+                       ORDER BY assignments.created_at DESC""",
+                    (teacher_id, student_id, teacher_id),
+                )
+                rows = cur.fetchall()
+
+                grades = [
+                    {
+                        "assignment_id": row["assignment_id"],
+                        "title": row["title"],
+                        "subject": row["subject"],
+                        "assignment_total_marks": float(row["assignment_total_marks"]) if row["assignment_total_marks"] is not None else None,
+                        "marks_obtained": float(row["marks_obtained"]),
+                        "graded_question_count": int(row["graded_question_count"]),
+                        "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+                    }
+                    for row in rows
+                ]
+
+                return json.dumps({
+                    "student": {
+                        "teacher_id": str(student["teacher_id"]),
+                        "id": str(student["id"]),
+                        "student_id": student["student_id"],
+                        "name": student["name"],
+                        "created_at": student["created_at"].isoformat() if student["created_at"] else None,
+                    },
+                    "count": len(grades),
+                    "data": grades,
+                })
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+class GetAssignmentSubmittedStudentsScoresInput(BaseModel):
+    assignment_id: int = Field(..., description="The assignment ID")
+    teacher_id: str = Field(..., description="The teacher's UUID")
+
+
+@tool("get_assignment_submitted_students_scores", args_schema=GetAssignmentSubmittedStudentsScoresInput)
+def get_assignment_submitted_students_scores(assignment_id: int, teacher_id: str) -> str:
+    """Lists students who submitted answers for an assignment and shows each student's total score."""
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """SELECT id as assignment_id, title, subject, total_marks as assignment_total_marks
+                       FROM public.assignments
+                       WHERE id = %s AND teacher_id = %s""",
+                    (assignment_id, teacher_id),
+                )
+                assignment = cur.fetchone()
+
+                if not assignment:
+                    return json.dumps({"error": "Assignment not found or you are not authorized to view it."})
+
+                cur.execute(
+                    """SELECT
+                         students.id,
+                         students.student_id,
+                         students.name,
+                         COALESCE(score_totals.marks_obtained, 0)::float as marks_obtained,
+                         assignments.total_marks as assignment_total_marks,
+                         submissions.submitted_question_count::int as submitted_question_count,
+                         COALESCE(score_totals.graded_question_count, 0)::int as graded_question_count,
+                         submissions.latest_submission_at
+                       FROM (
+                         SELECT
+                           student_id,
+                           COUNT(DISTINCT question_label)::int as submitted_question_count,
+                           MAX(created_at) as latest_submission_at
+                         FROM public.student_answers
+                         WHERE assignment_id = %s AND teacher_id = %s
+                         GROUP BY student_id
+                       ) submissions
+                       INNER JOIN public.students
+                         ON students.id = submissions.student_id
+                         AND students.teacher_id = %s
+                       INNER JOIN public.assignments
+                         ON assignments.id = %s
+                         AND assignments.teacher_id = %s
+                       LEFT JOIN (
+                         SELECT
+                           student_id,
+                           SUM(marks)::float as marks_obtained,
+                           COUNT(*)::int as graded_question_count
+                         FROM public.student_question_scores
+                         WHERE assignment_id = %s AND teacher_id = %s
+                         GROUP BY student_id
+                       ) score_totals ON score_totals.student_id = students.id
+                       ORDER BY students.name ASC""",
+                    (assignment_id, teacher_id, teacher_id, assignment_id, teacher_id, assignment_id, teacher_id),
+                )
+                rows = cur.fetchall()
+
+                submitted_students = [
+                    {
+                        "id": str(row["id"]),
+                        "student_id": row["student_id"],
+                        "name": row["name"],
+                        "marks_obtained": float(row["marks_obtained"]),
+                        "assignment_total_marks": float(row["assignment_total_marks"]) if row["assignment_total_marks"] is not None else None,
+                        "submitted_question_count": int(row["submitted_question_count"]),
+                        "graded_question_count": int(row["graded_question_count"]),
+                        "latest_submission_at": row["latest_submission_at"].isoformat() if row["latest_submission_at"] else None,
+                    }
+                    for row in rows
+                ]
+
+                return json.dumps({
+                    "assignment": {
+                        "assignment_id": assignment["assignment_id"],
+                        "title": assignment["title"],
+                        "subject": assignment["subject"],
+                        "assignment_total_marks": float(assignment["assignment_total_marks"]) if assignment["assignment_total_marks"] is not None else None,
+                    },
+                    "count": len(submitted_students),
+                    "data": submitted_students,
+                })
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
 class QuerySyllabusInput(BaseModel):
     search_query: str = Field(..., description="Natural language query about student weaknesses to find related syllabus topics")
     assignment_id: int = Field(..., description="The assignment ID whose syllabus to query")
@@ -140,4 +305,11 @@ def query_syllabus(search_query: str, assignment_id: int) -> str:
         return json.dumps({"error": str(e)})
 
 
-tools = [search_student, search_assignment, get_student_scores, query_syllabus]
+tools = [
+    search_student,
+    search_assignment,
+    get_student_scores,
+    get_student_assignment_grades,
+    get_assignment_submitted_students_scores,
+    query_syllabus,
+]

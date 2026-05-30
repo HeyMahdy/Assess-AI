@@ -248,6 +248,74 @@ export const getStudentAssignmentsWithMarks = async (req: Request, res: Response
 };
 
 /**
+ * Get only graded assignments for a student with total marks obtained
+ */
+export const getStudentAssignmentGrades = async (req: Request, res: Response) => {
+  try {
+    const { studentId } = req.params;
+    const teacherId = req.authUser?.id;
+
+    if (!teacherId) {
+      return res.status(401).json({ error: 'Unauthorized: Missing teacher identity' });
+    }
+
+    const studentQuery = `
+      SELECT teacher_id, id, student_id, name, created_at
+      FROM public.students
+      WHERE teacher_id = $1 AND id = $2;
+    `;
+
+    const studentResult = await pool.query(studentQuery, [teacherId, studentId]);
+
+    if (!studentResult.rows || studentResult.rows.length === 0) {
+      return res.status(404).json({
+        error: 'Student not found or you are not authorized to view it'
+      });
+    }
+
+    const gradesQuery = `
+      SELECT
+        assignments.id as assignment_id,
+        assignments.title,
+        assignments.subject,
+        assignments.total_marks as assignment_total_marks,
+        score_totals.marks_obtained::float as marks_obtained,
+        score_totals.graded_question_count::int as graded_question_count,
+        assignments.created_at
+      FROM (
+        SELECT
+          assignment_id,
+          SUM(marks)::float as marks_obtained,
+          COUNT(*)::int as graded_question_count
+        FROM public.student_question_scores
+        WHERE teacher_id = $1 AND student_id = $2
+        GROUP BY assignment_id
+      ) score_totals
+      INNER JOIN public.assignments
+        ON assignments.id = score_totals.assignment_id
+        AND assignments.teacher_id = $1
+      ORDER BY assignments.created_at DESC;
+    `;
+
+    const gradesResult = await pool.query(gradesQuery, [teacherId, studentId]);
+
+    return res.status(200).json({
+      message: 'Student assignment grades retrieved successfully',
+      student: studentResult.rows[0],
+      count: gradesResult.rowCount ?? gradesResult.rows.length,
+      data: gradesResult.rows
+    });
+
+  } catch (error: any) {
+    console.error('Error fetching student assignment grades:', error.message);
+    return res.status(500).json({
+      error: 'Database error',
+      details: error.message
+    });
+  }
+};
+
+/**
  * Update a student's information
  */
 export const updateStudent = async (req: Request, res: Response) => {

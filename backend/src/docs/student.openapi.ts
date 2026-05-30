@@ -420,4 +420,77 @@ export const studentPaths: Record<string, any> = {
       },
     },
   },
+  '/students/{studentId}/assignment-grades': {
+    get: {
+      tags: ['Students'],
+      summary: 'Get a student\'s graded assignments',
+      description: 'Retrieves only assignments where the student has stored grading results. Ungraded assignments are excluded.',
+      security: [{ bearerAuth: [] }],
+      parameters: [
+        {
+          name: 'studentId',
+          in: 'path',
+          required: true,
+          schema: { type: 'string', format: 'uuid' },
+          description: 'The student UUID primary key',
+        },
+      ],
+      responses: {
+        '200': {
+          description: 'Student assignment grades retrieved successfully',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  message: { type: 'string' },
+                  student: studentSchema,
+                  count: { type: 'integer' },
+                  data: {
+                    type: 'array',
+                    items: studentAssignmentMarksSchema,
+                  },
+                },
+                required: ['message', 'student', 'count', 'data'],
+              },
+              example: {
+                message: 'Student assignment grades retrieved successfully',
+                student: {
+                  teacher_id: '7d0d2c5f-3b95-4f43-8fd6-19a2939b7a13',
+                  id: '84e2c2b8-f5a4-4e34-943b-1ef82f804d9c',
+                  student_id: 'S-1001',
+                  name: 'Student Name',
+                  created_at: '2026-05-30T10:00:00.000Z',
+                },
+                count: 1,
+                data: [
+                  {
+                    assignment_id: 12,
+                    title: 'Physics Assignment',
+                    subject: 'Physics',
+                    assignment_total_marks: 50,
+                    marks_obtained: 42.5,
+                    graded_question_count: 5,
+                    created_at: '2026-05-30T10:00:00.000Z',
+                  },
+                ],
+              },
+            },
+          },
+        },
+        '401': {
+          description: 'Unauthorized: Missing teacher identity',
+          content: { 'application/json': { schema: studentErrorSchema } },
+        },
+        '404': {
+          description: 'Not Found: Student not found or unauthorized',
+          content: { 'application/json': { schema: studentErrorSchema } },
+        },
+        '500': {
+          description: 'Internal Server Error: Database error',
+          content: { 'application/json': { schema: studentErrorSchema } },
+        },
+      },
+    },
+  },
 };
