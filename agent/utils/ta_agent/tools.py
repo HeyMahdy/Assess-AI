@@ -1,413 +1,433 @@
 import json
-import os
-from contextvars import ContextVar
-from typing import List
-from urllib.parse import quote
+import re
+from datetime import date, datetime
+from decimal import Decimal
+from typing import Any
+from uuid import UUID
 
-import httpx
-from pydantic import BaseModel, Field
 from langchain_core.tools import tool
+from pydantic import BaseModel, Field
+
 from config.db import get_db_connection
 
 
-AGENT_BASE_URL = "http://localhost:8000"
-BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "http://localhost:8080")
-_ta_access_token: ContextVar[str] = ContextVar("ta_access_token", default="")
+MAX_RESULT_ROWS = 50
+DEFAULT_RESULT_ROWS = 5
+REDACTED = "[REDACTED]"
+
+SENSITIVE_COLUMN_PATTERNS = (
+    "password",
+    "password_hash",
+    "token",
+    "secret",
+    "credential",
+    "api_key",
+    "apikey",
+    "private_key",
+    "hash",
+)
+
+FORBIDDEN_SQL_RE = re.compile(
+    r"\b("
+    r"insert|update|delete|drop|alter|truncate|create|replace|grant|revoke|"
+    r"copy|execute|call|do|merge|vacuum|analyze|reindex|refresh|set|reset|"
+    r"begin|start|commit|rollback|savepoint|lock|listen|notify"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+SCHEMA: dict[str, list[dict[str, str]]] = {
+    "ai_evaluations": [
+        {"column": "id", "type": "integer", "nullable": "NO", "default": ""},
+        {"column": "student_answer_id", "type": "integer", "nullable": "NO", "default": ""},
+        {"column": "final_score", "type": "numeric", "nullable": "YES", "default": ""},
+        {"column": "final_feedback", "type": "text", "nullable": "YES", "default": ""},
+        {"column": "detailed_marks", "type": "jsonb", "nullable": "NO", "default": ""},
+        {"column": "confidence_score", "type": "numeric", "nullable": "YES", "default": ""},
+        {"column": "evaluation_metadata", "type": "jsonb", "nullable": "YES", "default": ""},
+        {"column": "evaluated_at", "type": "timestamp with time zone", "nullable": "NO", "default": "now()"},
+    ],
+    "assignments": [
+        {"column": "id", "type": "integer", "nullable": "NO", "default": ""},
+        {"column": "teacher_id", "type": "uuid", "nullable": "NO", "default": ""},
+        {"column": "title", "type": "text", "nullable": "NO", "default": ""},
+        {"column": "subject", "type": "text", "nullable": "YES", "default": ""},
+        {"column": "total_marks", "type": "integer", "nullable": "YES", "default": ""},
+        {"column": "created_at", "type": "timestamp with time zone", "nullable": "NO", "default": "now()"},
+    ],
+    "concept_dependencies": [
+        {"column": "id", "type": "integer", "nullable": "NO", "default": ""},
+        {"column": "concept_id", "type": "integer", "nullable": "NO", "default": ""},
+        {"column": "prerequisite_concept_id", "type": "integer", "nullable": "NO", "default": ""},
+    ],
+    "concepts": [
+        {"column": "id", "type": "integer", "nullable": "NO", "default": ""},
+        {"column": "subject", "type": "text", "nullable": "NO", "default": ""},
+        {"column": "name", "type": "text", "nullable": "NO", "default": ""},
+        {"column": "description", "type": "text", "nullable": "YES", "default": ""},
+    ],
+    "grading_jobs": [
+        {"column": "id", "type": "uuid", "nullable": "NO", "default": "gen_random_uuid()"},
+        {"column": "teacher_id", "type": "uuid", "nullable": "NO", "default": ""},
+        {"column": "assignment_id", "type": "integer", "nullable": "NO", "default": ""},
+        {"column": "student_id", "type": "text", "nullable": "NO", "default": ""},
+        {"column": "status", "type": "text", "nullable": "NO", "default": "'queued'::text"},
+        {"column": "created_at", "type": "timestamp with time zone", "nullable": "YES", "default": "now()"},
+        {"column": "completed_at", "type": "timestamp with time zone", "nullable": "YES", "default": ""},
+    ],
+    "knowledge_documents": [
+        {"column": "id", "type": "integer", "nullable": "NO", "default": ""},
+        {"column": "teacher_id", "type": "uuid", "nullable": "NO", "default": ""},
+        {"column": "subject", "type": "text", "nullable": "NO", "default": ""},
+        {"column": "topic", "type": "text", "nullable": "NO", "default": ""},
+        {"column": "document_type", "type": "text", "nullable": "NO", "default": ""},
+        {"column": "file_name", "type": "text", "nullable": "YES", "default": ""},
+        {"column": "content", "type": "text", "nullable": "NO", "default": ""},
+        {"column": "created_at", "type": "timestamp with time zone", "nullable": "YES", "default": "now()"},
+    ],
+    "knowledge_embeddings": [
+        {"column": "id", "type": "integer", "nullable": "NO", "default": ""},
+        {"column": "document_id", "type": "integer", "nullable": "NO", "default": ""},
+        {"column": "chunk_text", "type": "text", "nullable": "NO", "default": ""},
+        {"column": "embedding", "type": "USER-DEFINED", "nullable": "YES", "default": ""},
+        {"column": "created_at", "type": "timestamp with time zone", "nullable": "YES", "default": "now()"},
+    ],
+    "questions": [
+        {"column": "id", "type": "integer", "nullable": "NO", "default": ""},
+        {"column": "teacher_id", "type": "uuid", "nullable": "NO", "default": ""},
+        {"column": "assignment_id", "type": "integer", "nullable": "NO", "default": ""},
+        {"column": "question_label", "type": "text", "nullable": "NO", "default": ""},
+        {"column": "question_description", "type": "text", "nullable": "NO", "default": ""},
+        {"column": "marks", "type": "integer", "nullable": "YES", "default": ""},
+        {"column": "created_at", "type": "timestamp with time zone", "nullable": "YES", "default": "now()"},
+    ],
+    "remediation_exercises": [
+        {"column": "id", "type": "integer", "nullable": "NO", "default": ""},
+        {"column": "concept_id", "type": "integer", "nullable": "NO", "default": ""},
+        {"column": "generated_question", "type": "text", "nullable": "NO", "default": ""},
+        {"column": "difficulty", "type": "text", "nullable": "YES", "default": ""},
+        {"column": "created_at", "type": "timestamp with time zone", "nullable": "YES", "default": "now()"},
+        {"column": "student_id", "type": "uuid", "nullable": "NO", "default": ""},
+    ],
+    "rubrics": [
+        {"column": "id", "type": "integer", "nullable": "NO", "default": ""},
+        {"column": "teacher_id", "type": "uuid", "nullable": "NO", "default": ""},
+        {"column": "assignment_id", "type": "integer", "nullable": "NO", "default": ""},
+        {"column": "question_label", "type": "text", "nullable": "NO", "default": ""},
+        {"column": "rubric_description", "type": "jsonb", "nullable": "NO", "default": ""},
+        {"column": "created_at", "type": "timestamp with time zone", "nullable": "YES", "default": "now()"},
+    ],
+    "student_answers": [
+        {"column": "id", "type": "integer", "nullable": "NO", "default": ""},
+        {"column": "teacher_id", "type": "uuid", "nullable": "NO", "default": ""},
+        {"column": "student_id", "type": "text", "nullable": "NO", "default": ""},
+        {"column": "assignment_id", "type": "integer", "nullable": "NO", "default": ""},
+        {"column": "question_label", "type": "text", "nullable": "NO", "default": ""},
+        {"column": "answer", "type": "text", "nullable": "NO", "default": ""},
+        {"column": "created_at", "type": "timestamp with time zone", "nullable": "YES", "default": "now()"},
+    ],
+    "student_question_scores": [
+        {"column": "id", "type": "integer", "nullable": "NO", "default": ""},
+        {"column": "teacher_id", "type": "uuid", "nullable": "NO", "default": ""},
+        {"column": "student_id", "type": "text", "nullable": "NO", "default": ""},
+        {"column": "assignment_id", "type": "integer", "nullable": "NO", "default": ""},
+        {"column": "question_label", "type": "text", "nullable": "NO", "default": ""},
+        {"column": "question_text", "type": "text", "nullable": "YES", "default": ""},
+        {"column": "student_solution", "type": "text", "nullable": "YES", "default": ""},
+        {"column": "marks", "type": "numeric", "nullable": "NO", "default": "0.0"},
+        {"column": "confidence_score", "type": "numeric", "nullable": "NO", "default": ""},
+        {"column": "created_at", "type": "timestamp with time zone", "nullable": "YES", "default": "now()"},
+        {"column": "updated_at", "type": "timestamp with time zone", "nullable": "YES", "default": "now()"},
+        {"column": "teacher_comment", "type": "text", "nullable": "YES", "default": ""},
+        {"column": "ai_comment", "type": "text", "nullable": "YES", "default": ""},
+    ],
+    "student_weak_concepts": [
+        {"column": "id", "type": "integer", "nullable": "NO", "default": ""},
+        {"column": "teacher_id", "type": "uuid", "nullable": "NO", "default": ""},
+        {"column": "student_id", "type": "text", "nullable": "NO", "default": ""},
+        {"column": "concept_id", "type": "integer", "nullable": "NO", "default": ""},
+        {"column": "weakness_score", "type": "numeric", "nullable": "YES", "default": ""},
+        {"column": "created_at", "type": "timestamp with time zone", "nullable": "YES", "default": "now()"},
+    ],
+    "students": [
+        {"column": "teacher_id", "type": "uuid", "nullable": "NO", "default": ""},
+        {"column": "student_id", "type": "text", "nullable": "NO", "default": ""},
+        {"column": "name", "type": "text", "nullable": "NO", "default": ""},
+        {"column": "created_at", "type": "timestamp with time zone", "nullable": "NO", "default": "now()"},
+        {"column": "id", "type": "uuid", "nullable": "NO", "default": "gen_random_uuid()"},
+    ],
+    "syllabi": [
+        {"column": "id", "type": "integer", "nullable": "NO", "default": ""},
+        {"column": "teacher_id", "type": "uuid", "nullable": "NO", "default": ""},
+        {"column": "filename", "type": "text", "nullable": "NO", "default": ""},
+        {"column": "raw_text", "type": "text", "nullable": "YES", "default": ""},
+        {"column": "status", "type": "text", "nullable": "NO", "default": "'processing'::text"},
+        {"column": "entity_count", "type": "integer", "nullable": "YES", "default": "0"},
+        {"column": "relationship_count", "type": "integer", "nullable": "YES", "default": "0"},
+        {"column": "created_at", "type": "timestamp with time zone", "nullable": "YES", "default": "now()"},
+        {"column": "assignment_id", "type": "integer", "nullable": "YES", "default": ""},
+    ],
+    "syllabus_entities": [
+        {"column": "id", "type": "integer", "nullable": "NO", "default": ""},
+        {"column": "syllabus_id", "type": "integer", "nullable": "NO", "default": ""},
+        {"column": "name", "type": "text", "nullable": "NO", "default": ""},
+        {"column": "entity_type", "type": "text", "nullable": "NO", "default": ""},
+        {"column": "description", "type": "text", "nullable": "YES", "default": ""},
+        {"column": "difficulty_level", "type": "text", "nullable": "YES", "default": ""},
+        {"column": "week_or_unit", "type": "text", "nullable": "YES", "default": ""},
+        {"column": "embedding", "type": "USER-DEFINED", "nullable": "YES", "default": ""},
+        {"column": "created_at", "type": "timestamp with time zone", "nullable": "YES", "default": "now()"},
+    ],
+    "syllabus_relationships": [
+        {"column": "id", "type": "integer", "nullable": "NO", "default": ""},
+        {"column": "syllabus_id", "type": "integer", "nullable": "NO", "default": ""},
+        {"column": "source_entity_id", "type": "integer", "nullable": "NO", "default": ""},
+        {"column": "target_entity_id", "type": "integer", "nullable": "NO", "default": ""},
+        {"column": "relationship_type", "type": "text", "nullable": "NO", "default": ""},
+        {"column": "strength", "type": "integer", "nullable": "YES", "default": "3"},
+        {"column": "reason", "type": "text", "nullable": "YES", "default": ""},
+        {"column": "created_at", "type": "timestamp with time zone", "nullable": "YES", "default": "now()"},
+    ],
+    "teacher_reviews": [
+        {"column": "id", "type": "integer", "nullable": "NO", "default": ""},
+        {"column": "evaluation_id", "type": "integer", "nullable": "NO", "default": ""},
+        {"column": "teacher_score", "type": "numeric", "nullable": "YES", "default": ""},
+        {"column": "teacher_feedback", "type": "text", "nullable": "YES", "default": ""},
+        {"column": "approved", "type": "boolean", "nullable": "YES", "default": "false"},
+        {"column": "reviewed_at", "type": "timestamp with time zone", "nullable": "YES", "default": "now()"},
+    ],
+    "teacher_solutions": [
+        {"column": "id", "type": "integer", "nullable": "NO", "default": ""},
+        {"column": "teacher_id", "type": "uuid", "nullable": "NO", "default": ""},
+        {"column": "assignment_id", "type": "integer", "nullable": "NO", "default": ""},
+        {"column": "question_label", "type": "text", "nullable": "NO", "default": ""},
+        {"column": "solution_text", "type": "text", "nullable": "NO", "default": ""},
+        {"column": "created_at", "type": "timestamp with time zone", "nullable": "YES", "default": "now()"},
+    ],
+    "users": [
+        {"column": "id", "type": "uuid", "nullable": "NO", "default": "gen_random_uuid()"},
+        {"column": "email", "type": "text", "nullable": "NO", "default": ""},
+        {"column": "password_hash", "type": "text", "nullable": "NO", "default": ""},
+        {"column": "display_name", "type": "text", "nullable": "YES", "default": ""},
+        {"column": "created_at", "type": "timestamp with time zone", "nullable": "NO", "default": "now()"},
+    ],
+}
+
+RELATIONSHIP_HINTS = [
+    "assignments.teacher_id = users.id",
+    "students.teacher_id = users.id",
+    "questions.assignment_id = assignments.id",
+    "rubrics.assignment_id = assignments.id",
+    "teacher_solutions.assignment_id = assignments.id",
+    "student_answers.assignment_id = assignments.id",
+    "student_question_scores.assignment_id = assignments.id",
+    "ai_evaluations.student_answer_id = student_answers.id",
+    "teacher_reviews.evaluation_id = ai_evaluations.id",
+    "syllabi.assignment_id = assignments.id",
+    "syllabus_entities.syllabus_id = syllabi.id",
+    "syllabus_relationships.source_entity_id = syllabus_entities.id",
+    "syllabus_relationships.target_entity_id = syllabus_entities.id",
+    "student_weak_concepts.concept_id = concepts.id",
+    "concept_dependencies.concept_id = concepts.id",
+    "concept_dependencies.prerequisite_concept_id = concepts.id",
+    "remediation_exercises.concept_id = concepts.id",
+    "students.student_id is the teacher-facing student ID.",
+    "students.id is the internal UUID; some historical score/submission rows store this UUID as text in student_id.",
+    "For student_question_scores, join students with: student_question_scores.student_id = students.id::text OR student_question_scores.student_id = students.student_id.",
+    "For student_answers, join students with: student_answers.student_id = students.id::text OR student_answers.student_id = students.student_id.",
+    "For student_weak_concepts, join students with: student_weak_concepts.student_id = students.id::text OR student_weak_concepts.student_id = students.student_id.",
+    "For grading_jobs, join students with: grading_jobs.student_id = students.id::text OR grading_jobs.student_id = students.student_id.",
+    "remediation_exercises.student_id is UUID and joins to students.id.",
+]
 
 
 def set_ta_auth_context(access_token: str = "") -> None:
-    _ta_access_token.set(access_token or "")
+    """Compatibility no-op; TA SQL tools use DATABASE_URL, not backend auth."""
+    return None
 
 
-def _backend_headers() -> dict:
-    token = _ta_access_token.get("")
-    if not token:
-        return {}
-    return {"Authorization": f"Bearer {token}"}
+def _is_sensitive_column(column_name: str) -> bool:
+    normalized = column_name.lower()
+    return any(pattern in normalized for pattern in SENSITIVE_COLUMN_PATTERNS)
 
 
-def _backend_get(path: str) -> str:
-    headers = _backend_headers()
-    if not headers:
-        return json.dumps({"error": "TA context tools need the teacher's authenticated session token."})
-
-    try:
-        response = httpx.get(f"{BACKEND_BASE_URL}{path}", headers=headers, timeout=30.0)
-        if response.status_code >= 400:
-            return json.dumps({"error": response.json().get("error", f"Backend returned {response.status_code}")})
-        return json.dumps(response.json())
-    except Exception as e:
-        return json.dumps({"error": str(e)})
-
-
-def _backend_get_json(path: str) -> dict:
-    return json.loads(_backend_get(path))
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, UUID):
+        return str(value)
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return REDACTED
+    if isinstance(value, list):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    return value
 
 
-def _backend_post(path: str, payload: dict) -> str:
-    headers = _backend_headers()
-    if not headers:
-        return json.dumps({"error": "TA context tools need the teacher's authenticated session token."})
-
-    try:
-        response = httpx.post(f"{BACKEND_BASE_URL}{path}", json=payload, headers=headers, timeout=30.0)
-        if response.status_code >= 400:
-            return json.dumps({"error": response.json().get("error", f"Backend returned {response.status_code}")})
-        return json.dumps(response.json())
-    except Exception as e:
-        return json.dumps({"error": str(e)})
+def _redact_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: REDACTED if _is_sensitive_column(key) else _json_safe(value)
+        for key, value in row.items()
+    }
 
 
-class ResolveEntitiesInput(BaseModel):
-    students: List[str] = Field(default_factory=list, description="Student names or teacher-facing student IDs to resolve")
-    assignments: List[str] = Field(default_factory=list, description="Assignment titles or assignment IDs to resolve")
+def _split_requested_tables(table_names: str) -> list[str]:
+    return [
+        table.strip().removeprefix("public.")
+        for table in table_names.split(",")
+        if table.strip()
+    ]
 
 
-@tool("resolve_entities", args_schema=ResolveEntitiesInput)
-def resolve_entities(students: List[str] = None, assignments: List[str] = None) -> str:
-    """Resolve teacher-friendly student and assignment references using authenticated backend context endpoints."""
-    return _backend_post("/ta/context/resolve", {
-        "students": students or [],
-        "assignments": assignments or [],
-    })
+def _has_unquoted_semicolon(sql: str) -> bool:
+    in_single = False
+    in_double = False
+    index = 0
+
+    while index < len(sql):
+        char = sql[index]
+        next_char = sql[index + 1] if index + 1 < len(sql) else ""
+
+        if char == "'" and not in_double:
+            if in_single and next_char == "'":
+                index += 2
+                continue
+            in_single = not in_single
+        elif char == '"' and not in_single:
+            in_double = not in_double
+        elif char == ";" and not in_single and not in_double:
+            return True
+
+        index += 1
+
+    return False
 
 
-class StudentOverviewInput(BaseModel):
-    student_ref: str = Field(..., description="Teacher-facing student ID or name-derived resolved student reference")
+def _strip_single_trailing_semicolon(sql: str) -> str:
+    stripped = sql.strip()
+    if stripped.endswith(";"):
+        without_last = stripped[:-1]
+        if _has_unquoted_semicolon(without_last):
+            raise ValueError("Only a single read-only statement is allowed.")
+        return without_last.strip()
+    if _has_unquoted_semicolon(stripped):
+        raise ValueError("Only a single read-only statement is allowed.")
+    return stripped
 
 
-@tool("get_student_overview", args_schema=StudentOverviewInput)
-def get_student_overview(student_ref: str) -> str:
-    """Get a student's graded assignment history and summary. Do not ask teachers for UUIDs."""
-    return _backend_get(f"/ta/context/students/{quote(student_ref, safe='')}/overview")
+def _validate_read_only_query(query: str) -> str:
+    if not query or not query.strip():
+        raise ValueError("Query is required.")
+
+    if "--" in query or "/*" in query or "*/" in query:
+        raise ValueError("SQL comments are not allowed in TA queries.")
+
+    cleaned = _strip_single_trailing_semicolon(query)
+    lowered = cleaned.lstrip().lower()
+
+    if not lowered.startswith("select ") and not lowered.startswith("with "):
+        raise ValueError("Only read-only SELECT queries are allowed.")
+
+    if FORBIDDEN_SQL_RE.search(cleaned):
+        raise ValueError("Query contains a forbidden non-read-only SQL command.")
+
+    if re.search(r"\bfor\s+(update|share|no\s+key\s+update|key\s+share)\b", cleaned, re.IGNORECASE):
+        raise ValueError("Row-locking clauses are not allowed.")
+
+    return cleaned
 
 
-class AssignmentOverviewInput(BaseModel):
-    assignment_id: int = Field(..., description="Resolved assignment ID from resolve_entities")
+def _limited_query(query: str) -> str:
+    row_cap = MAX_RESULT_ROWS if re.search(r"\blimit\s+\d+\b", query, re.IGNORECASE) else DEFAULT_RESULT_ROWS
+    return f"SELECT * FROM ({query}) AS ta_readonly_result LIMIT {row_cap}"
 
 
-@tool("get_assignment_overview", args_schema=AssignmentOverviewInput)
-def get_assignment_overview(assignment_id: int) -> str:
-    """Get assignment-level class stats, submission counts, grading counts, and syllabus availability."""
-    return _backend_get(f"/ta/context/assignments/{assignment_id}/overview")
-
-
-class StudentAssignmentPerformanceInput(BaseModel):
-    student_ref: str = Field(..., description="Resolved student_uuid or teacher-facing student ID from resolve_entities")
-    assignment_id: int = Field(..., description="Resolved assignment ID from resolve_entities")
-
-
-@tool("get_student_assignment_performance", args_schema=StudentAssignmentPerformanceInput)
-def get_student_assignment_performance(student_ref: str, assignment_id: int) -> str:
-    """Get one student's scores, AI comments, teacher comments, extracted weaknesses, and syllabus availability for one assignment."""
-    return _backend_get(f"/ta/context/students/{quote(student_ref, safe='')}/assignments/{assignment_id}/performance")
-
-
-@tool("get_prerequisite_review_context", args_schema=StudentAssignmentPerformanceInput)
-def get_prerequisite_review_context(student_ref: str, assignment_id: int) -> str:
-    """Get score-derived weaknesses for one student assignment and query the assignment syllabus for prerequisite review topics."""
-    performance = _backend_get_json(
-        f"/ta/context/students/{quote(student_ref, safe='')}/assignments/{assignment_id}/performance"
+class SchemaInput(BaseModel):
+    table_names: str = Field(
+        ...,
+        description="Comma-separated table names, optionally schema-qualified, for example: students, assignments",
     )
-    if performance.get("error"):
-        return json.dumps(performance)
 
-    data = performance.get("data", {})
-    weaknesses = [item for item in data.get("weaknesses", []) if item]
-    scores = data.get("scores", [])
 
-    if weaknesses:
-        syllabus_query = "Student weaknesses from grading comments: " + " ".join(weaknesses)
-    else:
-        low_score_labels = [
-            str(score.get("question_label"))
-            for score in scores
-            if score.get("marks") is not None and float(score.get("marks") or 0) <= 1
-        ]
-        syllabus_query = "Student struggled on these low-scoring questions: " + ", ".join(low_score_labels)
+class QueryInput(BaseModel):
+    query: str = Field(..., description="A single read-only PostgreSQL SELECT query.")
 
-    prerequisite_result = None
-    if scores:
-        prerequisite_result = json.loads(query_syllabus.invoke({
-            "search_query": syllabus_query,
-            "assignment_id": assignment_id,
-        }))
+
+@tool("sql_db_list_tables")
+def sql_db_list_tables() -> str:
+    """Return a comma-separated list of known public tables in the Assess-AI database."""
+    return ", ".join(f"public.{name}" for name in SCHEMA.keys())
+
+
+@tool("sql_db_schema", args_schema=SchemaInput)
+def sql_db_schema(table_names: str) -> str:
+    """Return schema details and relationship hints for comma-separated Assess-AI table names."""
+    requested_tables = _split_requested_tables(table_names)
+    if not requested_tables:
+        return json.dumps({"error": "At least one table name is required."})
+
+    results: list[dict[str, Any]] = []
+    for table in requested_tables:
+        columns = SCHEMA.get(table)
+        if columns is None:
+            results.append({
+                "table": table,
+                "error": f"Table not found. Known tables: {', '.join(SCHEMA.keys())}",
+            })
+            continue
+
+        sample_rows: list[dict[str, Any]] = []
+        try:
+            with get_db_connection() as conn:
+                conn.set_session(readonly=True, autocommit=True)
+                with conn.cursor() as cur:
+                    cur.execute("SET statement_timeout = 5000")
+                    quoted_table = '"' + table.replace('"', '""') + '"'
+                    cur.execute(f'SELECT * FROM public.{quoted_table} LIMIT 3')
+                    sample_rows = [_redact_row(dict(row)) for row in cur.fetchall()]
+        except Exception as e:
+            sample_rows = [{"error": f"Could not fetch sample rows: {e}"}]
+
+        results.append({
+            "table": f"public.{table}",
+            "columns": columns,
+            "sample_rows": sample_rows,
+        })
 
     return json.dumps({
-        "performance": data,
-        "score_derived_weakness_query": syllabus_query if scores else "",
-        "syllabus_prerequisites": prerequisite_result,
+        "tables": results,
+        "relationship_hints": RELATIONSHIP_HINTS,
     })
 
 
-class AssignmentMistakesInput(BaseModel):
-    assignment_id: int = Field(..., description="Resolved assignment ID from resolve_entities")
-
-
-@tool("get_assignment_mistakes", args_schema=AssignmentMistakesInput)
-def get_assignment_mistakes(assignment_id: int) -> str:
-    """Get common AI-comment mistake groups for an assignment with affected students shown using friendly identifiers."""
-    return _backend_get(f"/ta/context/assignments/{assignment_id}/mistakes")
-
-
-class StudentWeakConceptsInput(BaseModel):
-    student_ref: str = Field(..., description="Teacher-facing student ID or resolved student reference")
-
-
-@tool("get_student_weak_concepts", args_schema=StudentWeakConceptsInput)
-def get_student_weak_concepts(student_ref: str) -> str:
-    """Get a student's weak concepts and any existing remediation exercises."""
-    return _backend_get(f"/ta/context/students/{quote(student_ref, safe='')}/weak-concepts")
-
-
-class SearchStudentInput(BaseModel):
-    name: str = Field(default="", description="Student name to search for")
-    provided_id: str = Field(default="", description="Student ID provided by teacher")
-    teacher_id: str = Field(..., description="The teacher's UUID")
-
-
-@tool("search_student", args_schema=SearchStudentInput)
-def search_student(name: str, provided_id: str, teacher_id: str) -> str:
-    """Searches the database for a student using their name or ID. Returns the student record."""
+@tool("sql_db_query", args_schema=QueryInput)
+def sql_db_query(query: str) -> str:
+    """Execute one single read-only PostgreSQL SELECT query and return capped, redacted rows."""
     try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cur:
-                if provided_id:
-                    cur.execute(
-                        "SELECT id, student_id, name FROM public.students WHERE teacher_id = %s AND (student_id = %s OR id::text = %s)",
-                        (teacher_id, provided_id, provided_id),
-                    )
-                    row = cur.fetchone()
-                    if row:
-                        return json.dumps({
-                            "student_uuid": str(row["id"]),
-                            "student_id": row["student_id"],
-                            "name": row["name"],
-                        })
-
-                if name:
-                    cur.execute(
-                        "SELECT id, student_id, name FROM public.students WHERE teacher_id = %s AND LOWER(name) LIKE LOWER(%s) LIMIT 5",
-                        (teacher_id, f"%{name}%"),
-                    )
-                    rows = cur.fetchall()
-                    if rows:
-                        if len(rows) == 1:
-                            return json.dumps({
-                                "student_uuid": str(rows[0]["id"]),
-                                "student_id": rows[0]["student_id"],
-                                "name": rows[0]["name"],
-                            })
-                        return json.dumps({
-                            "multiple_matches": [
-                                {
-                                    "student_uuid": str(r["id"]),
-                                    "student_id": r["student_id"],
-                                    "name": r["name"],
-                                }
-                                for r in rows
-                            ]
-                        })
-
-                return json.dumps({"error": f"No student found matching name='{name}' or id='{provided_id}'"})
-    except Exception as e:
+        cleaned_query = _validate_read_only_query(query)
+    except ValueError as e:
         return json.dumps({"error": str(e)})
 
-
-class SearchAssignmentInput(BaseModel):
-    title: str = Field(..., description="Assignment title or keyword to search for")
-    teacher_id: str = Field(..., description="The teacher's UUID")
-
-
-@tool("search_assignment", args_schema=SearchAssignmentInput)
-def search_assignment(title: str, teacher_id: str) -> str:
-    """Searches the database for an assignment by title. Returns the assignment record."""
     try:
         with get_db_connection() as conn:
+            conn.set_session(readonly=True, autocommit=True)
             with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT id, title, subject, total_marks FROM public.assignments WHERE teacher_id = %s AND LOWER(title) LIKE LOWER(%s) LIMIT 5",
-                    (teacher_id, f"%{title}%"),
-                )
-                rows = cur.fetchall()
-                if rows:
-                    if len(rows) == 1:
-                        return json.dumps({
-                            "assignment_id": rows[0]["id"],
-                            "title": rows[0]["title"],
-                            "subject": rows[0]["subject"],
-                            "total_marks": rows[0]["total_marks"],
-                        })
-                    return json.dumps({"multiple_matches": [{"id": r["id"], "title": r["title"]} for r in rows]})
-                return json.dumps({"error": f"No assignment found matching '{title}'"})
-    except Exception as e:
-        return json.dumps({"error": str(e)})
-
-
-class GetStudentScoresInput(BaseModel):
-    assignment_id: int = Field(..., description="The assignment ID")
-    student_id: str = Field(..., description="The student ID")
-    teacher_id: str = Field(..., description="The teacher's UUID")
-
-
-@tool("get_student_scores", args_schema=GetStudentScoresInput)
-def get_student_scores(assignment_id: int, student_id: str, teacher_id: str) -> str:
-    """Fetches the student's grading results including scores and AI comments about weaknesses."""
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """SELECT question_label, marks, confidence_score, ai_comment
-                       FROM public.student_question_scores
-                       WHERE assignment_id = %s AND student_id = %s AND teacher_id = %s
-                       ORDER BY id ASC""",
-                    (assignment_id, student_id, teacher_id),
-                )
-                rows = cur.fetchall()
-                if not rows:
-                    return json.dumps({"error": "No scores found for this student on this assignment."})
-
-                total = sum(float(r["marks"]) for r in rows)
-                results = [
-                    {
-                        "question_label": r["question_label"],
-                        "marks": float(r["marks"]),
-                        "confidence": float(r["confidence_score"]),
-                        "ai_comment": r.get("ai_comment", ""),
-                    }
-                    for r in rows
-                ]
-                return json.dumps({"total_marks": total, "scores": results})
-    except Exception as e:
-        return json.dumps({"error": str(e)})
-
-
-class GetStudentAssignmentGradesInput(BaseModel):
-    student_id: str = Field(..., description="The teacher-facing student ID, not the student UUID")
-    teacher_id: str = Field(..., description="The teacher's UUID")
-
-
-@tool("get_student_assignment_grades", args_schema=GetStudentAssignmentGradesInput)
-def get_student_assignment_grades(student_id: str, teacher_id: str) -> str:
-    """Lists all graded assignments for a student with total marks per assignment."""
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """SELECT teacher_id, id, student_id, name, created_at
-                       FROM public.students
-                       WHERE teacher_id = %s AND student_id = %s""",
-                    (teacher_id, student_id),
-                )
-                student = cur.fetchone()
-
-                if not student:
-                    return json.dumps({"error": "Student not found or you are not authorized to view it."})
-
-                cur.execute(
-                    """SELECT
-                         assignments.id as assignment_id,
-                         assignments.title,
-                         assignments.subject,
-                         assignments.total_marks as assignment_total_marks,
-                         score_totals.marks_obtained::float as marks_obtained,
-                         score_totals.graded_question_count::int as graded_question_count,
-                         assignments.created_at
-                       FROM (
-                         SELECT
-                           assignment_id,
-                           SUM(marks)::float as marks_obtained,
-                           COUNT(*)::int as graded_question_count
-                         FROM public.student_question_scores
-                         WHERE teacher_id = %s AND student_id = %s
-                         GROUP BY assignment_id
-                       ) score_totals
-                       INNER JOIN public.assignments
-                         ON assignments.id = score_totals.assignment_id
-                         AND assignments.teacher_id = %s
-                       ORDER BY assignments.created_at DESC""",
-                    (teacher_id, student["id"], teacher_id),
-                )
-                rows = cur.fetchall()
-
-                grades = [
-                    {
-                        "assignment_id": row["assignment_id"],
-                        "title": row["title"],
-                        "subject": row["subject"],
-                        "assignment_total_marks": float(row["assignment_total_marks"]) if row["assignment_total_marks"] is not None else None,
-                        "marks_obtained": float(row["marks_obtained"]),
-                        "graded_question_count": int(row["graded_question_count"]),
-                        "created_at": row["created_at"].isoformat() if row["created_at"] else None,
-                    }
-                    for row in rows
-                ]
-
+                cur.execute("SET statement_timeout = 10000")
+                cur.execute(_limited_query(cleaned_query))
+                rows = [_redact_row(dict(row)) for row in cur.fetchall()]
+                columns = [description[0] for description in cur.description] if cur.description else []
                 return json.dumps({
-                    "student": {
-                        "teacher_id": str(student["teacher_id"]),
-                        "id": str(student["id"]),
-                        "student_id": student["student_id"],
-                        "name": student["name"],
-                        "created_at": student["created_at"].isoformat() if student["created_at"] else None,
-                    },
-                    "count": len(grades),
-                    "data": grades,
+                    "columns": columns,
+                    "row_count": len(rows),
+                    "max_rows": MAX_RESULT_ROWS,
+                    "rows": rows,
                 })
     except Exception as e:
         return json.dumps({"error": str(e)})
 
 
-class GetAssignmentSubmittedStudentsScoresInput(BaseModel):
-    assignment_id: int = Field(..., description="The assignment ID")
-    teacher_id: str = Field(..., description="The teacher's UUID")
-
-
-@tool("get_assignment_submitted_students_scores", args_schema=GetAssignmentSubmittedStudentsScoresInput)
-def get_assignment_submitted_students_scores(assignment_id: int, teacher_id: str) -> str:
-    """Lists students who submitted answers for an assignment and shows each student's total score."""
-    return _backend_get(f"/assignments/{assignment_id}/students/scores")
-
-
-class QuerySyllabusInput(BaseModel):
-    search_query: str = Field(..., description="Natural language query about student weaknesses to find related syllabus topics")
-    assignment_id: int = Field(..., description="The assignment ID whose syllabus to query")
-
-
-@tool("query_syllabus", args_schema=QuerySyllabusInput)
-def query_syllabus(search_query: str, assignment_id: int) -> str:
-    """Queries the syllabus GraphRAG via the internal API to find prerequisites and related topics based on student weaknesses."""
-    try:
-        response = httpx.post(
-            f"{AGENT_BASE_URL}/internal/agent/syllabus/query",
-            json={"query": search_query, "assignment_id": assignment_id},
-            timeout=90.0,
-        )
-
-        if response.status_code == 404:
-            return json.dumps({"error": "No syllabus found for this assignment. Please upload a syllabus first."})
-
-        if response.status_code != 200:
-            return json.dumps({"error": f"Syllabus query failed with status {response.status_code}"})
-
-        data = response.json()
-        return json.dumps(data)
-    except Exception as e:
-        return json.dumps({"error": str(e)})
-
-
-tools = [
-    resolve_entities,
-    get_student_overview,
-    get_assignment_overview,
-    get_student_assignment_performance,
-    get_prerequisite_review_context,
-    get_assignment_mistakes,
-    get_student_weak_concepts,
-    search_student,
-    search_assignment,
-    get_student_scores,
-    get_student_assignment_grades,
-    get_assignment_submitted_students_scores,
-    query_syllabus,
-]
+tools = [sql_db_list_tables, sql_db_schema, sql_db_query]
