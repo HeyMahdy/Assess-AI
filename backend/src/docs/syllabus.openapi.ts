@@ -8,28 +8,28 @@ const syllabusErrorSchema = {
 };
 
 export const syllabusPaths: Record<string, any> = {
-  '/syllabus/upload': {
+  '/assignments/{assignmentId}/syllabus/{syllabusId}/upload': {
     post: {
       tags: ['Syllabus GraphRAG'],
       summary: 'Upload a syllabus and trigger GraphRAG ingestion',
       description: 'Accepts a PDF, DOCX, or TXT file scoped to a specific assignment. Extracts entities and relationships using AI, stores them with vector embeddings for semantic search. Re-uploading for the same assignment replaces the previous syllabus.',
       security: [{ bearerAuth: [] }],
+      parameters: [
+        { name: 'assignmentId', in: 'path', required: true, schema: { type: 'integer' }, description: 'The assignment ID' },
+        { name: 'syllabusId', in: 'path', required: true, schema: { type: 'integer' }, description: 'The syllabus ID' },
+      ],
       requestBody: {
         required: true,
         content: {
           'multipart/form-data': {
             schema: {
               type: 'object',
-              required: ['file', 'assignment_id'],
+              required: ['file'],
               properties: {
                 file: {
                   type: 'string',
                   format: 'binary',
                   description: 'Syllabus file (PDF, DOCX, or TXT)',
-                },
-                assignment_id: {
-                  type: 'integer',
-                  description: 'The assignment this syllabus belongs to',
                 },
               },
             },
@@ -68,7 +68,7 @@ export const syllabusPaths: Record<string, any> = {
             },
           },
         },
-        '400': { description: 'No file uploaded, missing assignment_id, or text extraction failed', content: { 'application/json': { schema: syllabusErrorSchema } } },
+        '400': { description: 'Invalid path params, no file uploaded, or text extraction failed', content: { 'application/json': { schema: syllabusErrorSchema } } },
         '401': { description: 'Unauthorized', content: { 'application/json': { schema: syllabusErrorSchema } } },
         '500': { description: 'Processing failed', content: { 'application/json': { schema: syllabusErrorSchema } } },
       },
@@ -115,15 +115,15 @@ export const syllabusPaths: Record<string, any> = {
       },
     },
   },
-  '/syllabus/graph': {
+  '/assignments/{assignmentId}/syllabus/{syllabusId}/graph': {
     get: {
       tags: ['Syllabus GraphRAG'],
       summary: 'Get the full entity-relationship graph for a syllabus',
-      description: 'Returns all extracted topics (nodes) and their relationships (edges) for visualization. Both syllabus_id and assignment_id are required.',
+      description: 'Returns all extracted topics (nodes) and their relationships (edges) for visualization. Both assignmentId and syllabusId are required path parameters.',
       security: [{ bearerAuth: [] }],
       parameters: [
-        { name: 'syllabus_id', in: 'query', required: true, schema: { type: 'integer' }, description: 'The syllabus ID' },
-        { name: 'assignment_id', in: 'query', required: true, schema: { type: 'integer' }, description: 'The assignment ID' },
+        { name: 'assignmentId', in: 'path', required: true, schema: { type: 'integer' }, description: 'The assignment ID' },
+        { name: 'syllabusId', in: 'path', required: true, schema: { type: 'integer' }, description: 'The syllabus ID' },
       ],
       responses: {
         '200': {
@@ -172,7 +172,7 @@ export const syllabusPaths: Record<string, any> = {
             },
           },
         },
-        '400': { description: 'Missing syllabus_id or assignment_id', content: { 'application/json': { schema: syllabusErrorSchema } } },
+        '400': { description: 'Invalid or missing assignmentId or syllabusId path param', content: { 'application/json': { schema: syllabusErrorSchema } } },
         '401': { description: 'Unauthorized', content: { 'application/json': { schema: syllabusErrorSchema } } },
         '500': { description: 'Failed to fetch graph', content: { 'application/json': { schema: syllabusErrorSchema } } },
       },

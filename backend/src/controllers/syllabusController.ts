@@ -4,6 +4,15 @@ import FormData from 'form-data';
 
 const FASTAPI_URL = 'http://localhost:8000';
 
+const parsePathId = (value: string | string[] | undefined) => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+};
+
 /**
  * Upload a syllabus and trigger GraphRAG ingestion
  */
@@ -16,20 +25,22 @@ export const uploadSyllabus = async (req: Request, res: Response) => {
     }
 
     const file = (req as any).file as any;
-    const { assignment_id } = req.body;
+    const assignmentId = parsePathId(req.params['assignmentId']);
+    const syllabusId = parsePathId(req.params['syllabusId']);
+
+    if (!assignmentId || !syllabusId) {
+      return res.status(400).json({ error: 'Valid assignmentId and syllabusId path params are required' });
+    }
 
     if (!file) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    if (!assignment_id) {
-      return res.status(400).json({ error: 'assignment_id is required' });
-    }
-
     const formData = new FormData();
     formData.append('file', file.buffer, file.originalname);
     formData.append('teacher_id', teacherId);
-    formData.append('assignment_id', String(assignment_id));
+    formData.append('assignment_id', String(assignmentId));
+    formData.append('syllabus_id', String(syllabusId));
 
     const response = await axios.post(`${FASTAPI_URL}/internal/agent/syllabus/upload`, formData, {
       headers: { ...formData.getHeaders() },
@@ -82,18 +93,19 @@ export const getSyllabusStatus = async (req: Request, res: Response) => {
  */
 export const getSyllabusGraph = async (req: Request, res: Response) => {
   try {
-    const { syllabus_id, assignment_id } = req.query;
+    const assignmentId = parsePathId(req.params['assignmentId']);
+    const syllabusId = parsePathId(req.params['syllabusId']);
     const teacherId = req.authUser?.id;
 
     if (!teacherId) {
       return res.status(401).json({ error: 'Unauthorized: Missing teacher identity' });
     }
 
-    if (!syllabus_id || !assignment_id) {
-      return res.status(400).json({ error: 'Both syllabus_id and assignment_id query params are required' });
+    if (!assignmentId || !syllabusId) {
+      return res.status(400).json({ error: 'Valid assignmentId and syllabusId path params are required' });
     }
 
-    const response = await axios.get(`${FASTAPI_URL}/internal/agent/syllabus/${syllabus_id}/graph`);
+    const response = await axios.get(`${FASTAPI_URL}/internal/agent/syllabus/${syllabusId}/graph`);
 
     return res.status(200).json({
       message: 'Graph retrieved successfully',
