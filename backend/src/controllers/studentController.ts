@@ -196,7 +196,7 @@ export const getStudentAssignmentsWithMarks = async (req: Request, res: Response
     const studentQuery = `
       SELECT teacher_id, id, student_id, name, created_at
       FROM public.students
-      WHERE teacher_id = $1 AND id = $2;
+      WHERE teacher_id = $1 AND student_id = $2;
     `;
 
     const studentResult = await pool.query(studentQuery, [teacherId, studentId]);
@@ -273,6 +273,8 @@ export const getStudentAssignmentGrades = async (req: Request, res: Response) =>
       });
     }
 
+    const studentUuid = studentResult.rows[0].id;
+
     const gradesQuery = `
       SELECT
         assignments.id as assignment_id,
@@ -297,7 +299,7 @@ export const getStudentAssignmentGrades = async (req: Request, res: Response) =>
       ORDER BY assignments.created_at DESC;
     `;
 
-    const gradesResult = await pool.query(gradesQuery, [teacherId, studentId]);
+    const gradesResult = await pool.query(gradesQuery, [teacherId, studentUuid]);
 
     return res.status(200).json({
       message: 'Student assignment grades retrieved successfully',

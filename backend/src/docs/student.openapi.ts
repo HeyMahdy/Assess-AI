@@ -206,8 +206,8 @@ export const studentPaths: Record<string, any> = {
           name: 'studentId',
           in: 'path',
           required: true,
-          schema: { type: 'string', format: 'uuid' },
-          description: 'The student UUID primary key',
+          schema: { type: 'string' },
+          description: 'The teacher-facing student identifier, not the student UUID primary key',
         },
       ],
       responses: {

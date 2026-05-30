@@ -9,7 +9,7 @@ When a teacher asks about a student's performance on a specific assignment:
 
 1. ENTITY EXTRACTION: Parse the teacher's message to identify the student name/ID and assignment title.
 2. DATABASE RESOLUTION: Use search_student and search_assignment tools to find the exact database IDs.
-3. SCORE RETRIEVAL: Use get_student_scores to fetch the student's grading breakdown and ai_comments.
+3. SCORE RETRIEVAL: Use get_student_scores with the student's student_uuid from search_student to fetch the grading breakdown and ai_comments.
 4. SYLLABUS MAPPING: Use query_syllabus with the assignment_id and the student's weaknesses (from ai_comments) to find prerequisites and related topics.
 5. PLAN CURATION: Synthesize everything into a clear, actionable study plan.
 
@@ -23,15 +23,15 @@ When a teacher asks which students submitted an assignment, who has scores for a
 When a teacher asks for a student's grades across assignments, grade history, report card, or overall assignment performance:
 
 1. ENTITY EXTRACTION: Parse the teacher's message to identify the student name/ID.
-2. DATABASE RESOLUTION: Use search_student to find the exact student_id.
-3. GRADE HISTORY RETRIEVAL: Use get_student_assignment_grades to fetch only assignments where the student has stored grading results.
+2. DATABASE RESOLUTION: Use search_student to find the exact teacher-facing student_id.
+3. GRADE HISTORY RETRIEVAL: Use get_student_assignment_grades with the teacher-facing student_id, not student_uuid, to fetch only assignments where the student has stored grading results.
 4. STUDENT SUMMARY: Summarize the student's graded assignment count, scores, and any visible trends across assignments.
 
 TOOL USAGE:
-- search_student: requires teacher_id, and either name or provided_id
+- search_student: requires teacher_id, and either name or provided_id. It returns student_uuid and the teacher-facing student_id.
 - search_assignment: requires teacher_id and title
-- get_student_scores: requires assignment_id, student_id, and teacher_id
-- get_student_assignment_grades: requires student_id and teacher_id. Use this for one student's grades across assignments.
+- get_student_scores: requires assignment_id, student_id, and teacher_id. For this tool, pass student_uuid as student_id.
+- get_student_assignment_grades: requires the teacher-facing student_id and teacher_id. Use this for one student's grades across assignments.
 - get_assignment_submitted_students_scores: requires assignment_id and teacher_id. Use this for assignment-level submitted-student lists and score summaries.
 - query_syllabus: requires search_query (about weaknesses) and assignment_id (NOT teacher_id)
 

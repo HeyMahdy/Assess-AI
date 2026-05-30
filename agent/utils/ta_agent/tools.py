@@ -22,23 +22,40 @@ def search_student(name: str, provided_id: str, teacher_id: str) -> str:
             with conn.cursor() as cur:
                 if provided_id:
                     cur.execute(
-                        "SELECT id, name FROM public.students WHERE teacher_id = %s AND id = %s",
-                        (teacher_id, provided_id),
+                        "SELECT id, student_id, name FROM public.students WHERE teacher_id = %s AND (student_id = %s OR id::text = %s)",
+                        (teacher_id, provided_id, provided_id),
                     )
                     row = cur.fetchone()
                     if row:
-                        return json.dumps({"student_id": row["id"], "name": row["name"]})
+                        return json.dumps({
+                            "student_uuid": str(row["id"]),
+                            "student_id": row["student_id"],
+                            "name": row["name"],
+                        })
 
                 if name:
                     cur.execute(
-                        "SELECT id, name FROM public.students WHERE teacher_id = %s AND LOWER(name) LIKE LOWER(%s) LIMIT 5",
+                        "SELECT id, student_id, name FROM public.students WHERE teacher_id = %s AND LOWER(name) LIKE LOWER(%s) LIMIT 5",
                         (teacher_id, f"%{name}%"),
                     )
                     rows = cur.fetchall()
                     if rows:
                         if len(rows) == 1:
-                            return json.dumps({"student_id": rows[0]["id"], "name": rows[0]["name"]})
-                        return json.dumps({"multiple_matches": [{"id": r["id"], "name": r["name"]} for r in rows]})
+                            return json.dumps({
+                                "student_uuid": str(rows[0]["id"]),
+                                "student_id": rows[0]["student_id"],
+                                "name": rows[0]["name"],
+                            })
+                        return json.dumps({
+                            "multiple_matches": [
+                                {
+                                    "student_uuid": str(r["id"]),
+                                    "student_id": r["student_id"],
+                                    "name": r["name"],
+                                }
+                                for r in rows
+                            ]
+                        })
 
                 return json.dumps({"error": f"No student found matching name='{name}' or id='{provided_id}'"})
     except Exception as e:
@@ -114,7 +131,7 @@ def get_student_scores(assignment_id: int, student_id: str, teacher_id: str) -> 
 
 
 class GetStudentAssignmentGradesInput(BaseModel):
-    student_id: str = Field(..., description="The student UUID")
+    student_id: str = Field(..., description="The teacher-facing student ID, not the student UUID")
     teacher_id: str = Field(..., description="The teacher's UUID")
 
 
@@ -127,7 +144,7 @@ def get_student_assignment_grades(student_id: str, teacher_id: str) -> str:
                 cur.execute(
                     """SELECT teacher_id, id, student_id, name, created_at
                        FROM public.students
-                       WHERE teacher_id = %s AND id = %s""",
+                       WHERE teacher_id = %s AND student_id = %s""",
                     (teacher_id, student_id),
                 )
                 student = cur.fetchone()
@@ -157,7 +174,7 @@ def get_student_assignment_grades(student_id: str, teacher_id: str) -> str:
                          ON assignments.id = score_totals.assignment_id
                          AND assignments.teacher_id = %s
                        ORDER BY assignments.created_at DESC""",
-                    (teacher_id, student_id, teacher_id),
+                    (teacher_id, student["id"], teacher_id),
                 )
                 rows = cur.fetchall()
 

@@ -25,8 +25,8 @@ const createResponse = () => {
   };
 };
 
-const createRequest = (authUserId?: string) => ({
-  params: { studentId: 'student-uuid' },
+const createRequest = (authUserId?: string, studentId = 'student-uuid') => ({
+  params: { studentId },
   authUser: authUserId
     ? {
         id: authUserId,
@@ -172,10 +172,10 @@ describe('getStudentAssignmentGrades', () => {
 
     const res = createResponse();
 
-    await getStudentAssignmentGrades(createRequest('teacher-uuid'), res);
+    await getStudentAssignmentGrades(createRequest('teacher-uuid', 'S-1001'), res);
 
     expect(queryMock).toHaveBeenCalledTimes(2);
-    expect(queryMock).toHaveBeenNthCalledWith(1, expect.any(String), ['teacher-uuid', 'student-uuid']);
+    expect(queryMock).toHaveBeenNthCalledWith(1, expect.any(String), ['teacher-uuid', 'S-1001']);
     expect(queryMock).toHaveBeenNthCalledWith(2, expect.any(String), ['teacher-uuid', 'student-uuid']);
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({
@@ -201,7 +201,10 @@ describe('getStudentAssignmentGrades', () => {
 
     const res = createResponse();
 
-    await getStudentAssignmentGrades(createRequest('teacher-uuid'), res);
+    await getStudentAssignmentGrades(createRequest('teacher-uuid', 'S-1001'), res);
+
+    expect(queryMock).toHaveBeenNthCalledWith(1, expect.any(String), ['teacher-uuid', 'S-1001']);
+    expect(queryMock).toHaveBeenNthCalledWith(2, expect.any(String), ['teacher-uuid', 'student-uuid']);
 
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({
@@ -217,9 +220,10 @@ describe('getStudentAssignmentGrades', () => {
 
     const res = createResponse();
 
-    await getStudentAssignmentGrades(createRequest('teacher-uuid'), res);
+    await getStudentAssignmentGrades(createRequest('teacher-uuid', 'S-9999'), res);
 
     expect(queryMock).toHaveBeenCalledTimes(1);
+    expect(queryMock).toHaveBeenNthCalledWith(1, expect.any(String), ['teacher-uuid', 'S-9999']);
     expect(res.status).toHaveBeenCalledWith(404);
     expect(res.json).toHaveBeenCalledWith({
       error: 'Student not found or you are not authorized to view it',
