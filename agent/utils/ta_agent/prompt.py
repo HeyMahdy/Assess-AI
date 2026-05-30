@@ -17,6 +17,7 @@ DEFAULT TOOL FLOW:
    - get_student_overview for grade history and progress across assignments.
    - get_assignment_overview for class-level assignment stats, submission count, graded count, average, high, low, and syllabus availability.
    - get_student_assignment_performance for one student's scores and comments on one assignment.
+   - get_assignment_submitted_students_scores for the submitted student list and total scores for an assignment.
    - get_prerequisite_review_context for prerequisite/study-plan questions about one student on one assignment.
    - get_assignment_mistakes for common mistakes across the class.
    - get_student_weak_concepts for stored weak concepts and remediation exercises.
