@@ -1,6 +1,7 @@
 from langchain_core.messages import HumanMessage, AIMessage
 
 from .graph import build_ta_graph
+from .tools import set_ta_auth_context
 
 
 def _build_history_messages(history: list | None):
@@ -43,9 +44,10 @@ def _build_history_messages(history: list | None):
     return messages
 
 
-async def chat_with_ta(teacher_id: str, message: str, history: list = None):
+async def chat_with_ta(teacher_id: str, message: str, history: list = None, access_token: str = ""):
     """Run a single turn of the TA chatbot using the LangGraph agent."""
     graph = build_ta_graph()
+    set_ta_auth_context(access_token)
 
     messages = _build_history_messages(history)
     messages.append(HumanMessage(content=message))
@@ -53,6 +55,7 @@ async def chat_with_ta(teacher_id: str, message: str, history: list = None):
     # Invoke the graph
     result = graph.invoke({
         "teacher_id": teacher_id,
+        "access_token": access_token,
         "messages": messages,
     })
 

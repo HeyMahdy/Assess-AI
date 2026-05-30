@@ -21,6 +21,7 @@ export const chatWithTA = async (req: Request, res: Response) => {
 
     const response = await axios.post(`${FASTAPI_URL}/internal/agent/ta/chat/json`, {
       teacher_id: teacherId,
+      access_token: req.authUser?.accessToken,
       message,
       history: history || [],
     });

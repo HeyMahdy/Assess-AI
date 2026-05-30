@@ -11,6 +11,9 @@ import { studentAnswerRouter } from './studentAnswer.js';
 import { gradingRouter } from './grading.js';
 import { syllabusRouter } from './syllabus.js';
 import { taChatRouter } from './taChat.js';
+import { taContextRouter } from './taContext.js';
+import { analyticsRouter } from './analytics.js';
+import { remediationRouter } from './remediation.js';
 
 
 export const rootRouter = Router();
@@ -28,3 +31,6 @@ rootRouter.use('/', studentAnswerRouter);
 rootRouter.use('/', gradingRouter);
 rootRouter.use('/', syllabusRouter);
 rootRouter.use('/', taChatRouter);
+rootRouter.use('/', taContextRouter);
+rootRouter.use('/', analyticsRouter);
+rootRouter.use('/', remediationRouter);

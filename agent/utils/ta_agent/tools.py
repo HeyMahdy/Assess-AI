@@ -1,4 +1,9 @@
 import json
+import os
+from contextvars import ContextVar
+from typing import List
+from urllib.parse import quote
+
 import httpx
 from pydantic import BaseModel, Field
 from langchain_core.tools import tool
@@ -6,6 +11,112 @@ from config.db import get_db_connection
 
 
 AGENT_BASE_URL = "http://localhost:8000"
+BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "http://localhost:8080")
+_ta_access_token: ContextVar[str] = ContextVar("ta_access_token", default="")
+
+
+def set_ta_auth_context(access_token: str = "") -> None:
+    _ta_access_token.set(access_token or "")
+
+
+def _backend_headers() -> dict:
+    token = _ta_access_token.get("")
+    if not token:
+        return {}
+    return {"Authorization": f"Bearer {token}"}
+
+
+def _backend_get(path: str) -> str:
+    headers = _backend_headers()
+    if not headers:
+        return json.dumps({"error": "TA context tools need the teacher's authenticated session token."})
+
+    try:
+        response = httpx.get(f"{BACKEND_BASE_URL}{path}", headers=headers, timeout=30.0)
+        if response.status_code >= 400:
+            return json.dumps({"error": response.json().get("error", f"Backend returned {response.status_code}")})
+        return json.dumps(response.json())
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+def _backend_post(path: str, payload: dict) -> str:
+    headers = _backend_headers()
+    if not headers:
+        return json.dumps({"error": "TA context tools need the teacher's authenticated session token."})
+
+    try:
+        response = httpx.post(f"{BACKEND_BASE_URL}{path}", json=payload, headers=headers, timeout=30.0)
+        if response.status_code >= 400:
+            return json.dumps({"error": response.json().get("error", f"Backend returned {response.status_code}")})
+        return json.dumps(response.json())
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+class ResolveEntitiesInput(BaseModel):
+    students: List[str] = Field(default_factory=list, description="Student names or teacher-facing student IDs to resolve")
+    assignments: List[str] = Field(default_factory=list, description="Assignment titles or assignment IDs to resolve")
+
+
+@tool("resolve_entities", args_schema=ResolveEntitiesInput)
+def resolve_entities(students: List[str] = None, assignments: List[str] = None) -> str:
+    """Resolve teacher-friendly student and assignment references using authenticated backend context endpoints."""
+    return _backend_post("/ta/context/resolve", {
+        "students": students or [],
+        "assignments": assignments or [],
+    })
+
+
+class StudentOverviewInput(BaseModel):
+    student_ref: str = Field(..., description="Teacher-facing student ID or name-derived resolved student reference")
+
+
+@tool("get_student_overview", args_schema=StudentOverviewInput)
+def get_student_overview(student_ref: str) -> str:
+    """Get a student's graded assignment history and summary. Do not ask teachers for UUIDs."""
+    return _backend_get(f"/ta/context/students/{quote(student_ref, safe='')}/overview")
+
+
+class AssignmentOverviewInput(BaseModel):
+    assignment_id: int = Field(..., description="Resolved assignment ID from resolve_entities")
+
+
+@tool("get_assignment_overview", args_schema=AssignmentOverviewInput)
+def get_assignment_overview(assignment_id: int) -> str:
+    """Get assignment-level class stats, submission counts, grading counts, and syllabus availability."""
+    return _backend_get(f"/ta/context/assignments/{assignment_id}/overview")
+
+
+class StudentAssignmentPerformanceInput(BaseModel):
+    student_ref: str = Field(..., description="Resolved student_uuid or teacher-facing student ID from resolve_entities")
+    assignment_id: int = Field(..., description="Resolved assignment ID from resolve_entities")
+
+
+@tool("get_student_assignment_performance", args_schema=StudentAssignmentPerformanceInput)
+def get_student_assignment_performance(student_ref: str, assignment_id: int) -> str:
+    """Get one student's scores, AI comments, teacher comments, extracted weaknesses, and syllabus availability for one assignment."""
+    return _backend_get(f"/ta/context/students/{quote(student_ref, safe='')}/assignments/{assignment_id}/performance")
+
+
+class AssignmentMistakesInput(BaseModel):
+    assignment_id: int = Field(..., description="Resolved assignment ID from resolve_entities")
+
+
+@tool("get_assignment_mistakes", args_schema=AssignmentMistakesInput)
+def get_assignment_mistakes(assignment_id: int) -> str:
+    """Get common AI-comment mistake groups for an assignment with affected students shown using friendly identifiers."""
+    return _backend_get(f"/ta/context/assignments/{assignment_id}/mistakes")
+
+
+class StudentWeakConceptsInput(BaseModel):
+    student_ref: str = Field(..., description="Teacher-facing student ID or resolved student reference")
+
+
+@tool("get_student_weak_concepts", args_schema=StudentWeakConceptsInput)
+def get_student_weak_concepts(student_ref: str) -> str:
+    """Get a student's weak concepts and any existing remediation exercises."""
+    return _backend_get(f"/ta/context/students/{quote(student_ref, safe='')}/weak-concepts")
 
 
 class SearchStudentInput(BaseModel):
@@ -323,6 +434,12 @@ def query_syllabus(search_query: str, assignment_id: int) -> str:
 
 
 tools = [
+    resolve_entities,
+    get_student_overview,
+    get_assignment_overview,
+    get_student_assignment_performance,
+    get_assignment_mistakes,
+    get_student_weak_concepts,
     search_student,
     search_assignment,
     get_student_scores,

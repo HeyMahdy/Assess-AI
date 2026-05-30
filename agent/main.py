@@ -390,6 +390,7 @@ async def ta_chat_json_endpoint(request: dict):
     """TA Chatbot endpoint (JSON body version)."""
     try:
         teacher_id = request.get("teacher_id", "")
+        access_token = request.get("access_token", "")
         message = request.get("message", "")
         history = request.get("history", [])
 
@@ -398,7 +399,7 @@ async def ta_chat_json_endpoint(request: dict):
         if not message:
             raise HTTPException(status_code=400, detail="message is required")
 
-        response = await chat_with_ta(teacher_id, message, history)
+        response = await chat_with_ta(teacher_id, message, history, access_token)
         return {"response": response}
     except Exception as e:
         print(traceback.format_exc())

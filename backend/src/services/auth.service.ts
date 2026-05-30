@@ -20,10 +20,11 @@ function signAccessToken(user: AuthTokenResponse['user']) {
     throw new HttpError(500, 'JWT secret is not configured');
   }
   const expiresIn = (env.JWT_EXPIRES_IN || '7d') as jwt.SignOptions['expiresIn'];
+  const signOptions = { expiresIn } as jwt.SignOptions;
   return jwt.sign(
     { sub: user.id, email: user.email, display_name: user.display_name },
     env.JWT_SECRET,
-    { expiresIn },
+    signOptions,
   );
 }
 
