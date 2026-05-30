@@ -12,7 +12,7 @@ from config.db import get_db_connection
 
 
 MAX_RESULT_ROWS = 50
-DEFAULT_RESULT_ROWS = 5
+DEFAULT_RESULT_ROWS = MAX_RESULT_ROWS
 REDACTED = "[REDACTED]"
 
 SENSITIVE_COLUMN_PATTERNS = (
@@ -241,6 +241,33 @@ RELATIONSHIP_HINTS = [
     "remediation_exercises.student_id is UUID and joins to students.id.",
 ]
 
+PRIMARY_KEYS = {
+    "ai_evaluations": ["id"],
+    "assignments": ["id"],
+    "concept_dependencies": ["id"],
+    "concepts": ["id"],
+    "grading_jobs": ["id"],
+    "knowledge_documents": ["id"],
+    "knowledge_embeddings": ["id"],
+    "questions": ["id"],
+    "remediation_exercises": ["id"],
+    "rubrics": ["id"],
+    "student_answers": ["id"],
+    "student_question_scores": ["id"],
+    "student_weak_concepts": ["id"],
+    "students": ["id"],
+    "syllabi": ["id"],
+    "syllabus_entities": ["id"],
+    "syllabus_relationships": ["id"],
+    "teacher_reviews": ["id"],
+    "teacher_solutions": ["id"],
+    "users": ["id"],
+}
+
+
+def _log(message: str) -> None:
+    print(f"[ta_agent.sql] {message}", flush=True)
+
 
 def set_ta_auth_context(access_token: str = "") -> None:
     """Compatibility no-op; TA SQL tools use DATABASE_URL, not backend auth."""
@@ -343,7 +370,16 @@ def _validate_read_only_query(query: str) -> str:
 
 def _limited_query(query: str) -> str:
     row_cap = MAX_RESULT_ROWS if re.search(r"\blimit\s+\d+\b", query, re.IGNORECASE) else DEFAULT_RESULT_ROWS
-    return f"SELECT * FROM ({query}) AS ta_readonly_result LIMIT {row_cap}"
+    return f"SELECT * FROM ({query}) AS ta_readonly_result LIMIT {row_cap + 1}"
+
+
+def _query_row_cap(query: str) -> int:
+    return MAX_RESULT_ROWS if re.search(r"\blimit\s+\d+\b", query, re.IGNORECASE) else DEFAULT_RESULT_ROWS
+
+
+def _preview_query(query: str) -> str:
+    compact = " ".join(query.split())
+    return compact[:500] + ("..." if len(compact) > 500 else "")
 
 
 class SchemaInput(BaseModel):
@@ -360,6 +396,7 @@ class QueryInput(BaseModel):
 @tool("sql_db_list_tables")
 def sql_db_list_tables() -> str:
     """Return a comma-separated list of known public tables in the Assess-AI database."""
+    _log("sql_db_list_tables called")
     return ", ".join(f"public.{name}" for name in SCHEMA.keys())
 
 
@@ -367,6 +404,7 @@ def sql_db_list_tables() -> str:
 def sql_db_schema(table_names: str) -> str:
     """Return schema details and relationship hints for comma-separated Assess-AI table names."""
     requested_tables = _split_requested_tables(table_names)
+    _log(f"sql_db_schema requested_tables={requested_tables}")
     if not requested_tables:
         return json.dumps({"error": "At least one table name is required."})
 
@@ -394,6 +432,7 @@ def sql_db_schema(table_names: str) -> str:
 
         results.append({
             "table": f"public.{table}",
+            "primary_key": PRIMARY_KEYS.get(table, []),
             "columns": columns,
             "sample_rows": sample_rows,
         })
@@ -410,23 +449,39 @@ def sql_db_query(query: str) -> str:
     try:
         cleaned_query = _validate_read_only_query(query)
     except ValueError as e:
+        _log(f"sql_db_query rejected error={e}")
         return json.dumps({"error": str(e)})
 
     try:
+        row_cap = _query_row_cap(cleaned_query)
+        _log(f"sql_db_query executing row_cap={row_cap} query={_preview_query(cleaned_query)}")
         with get_db_connection() as conn:
             conn.set_session(readonly=True, autocommit=True)
             with conn.cursor() as cur:
                 cur.execute("SET statement_timeout = 10000")
                 cur.execute(_limited_query(cleaned_query))
-                rows = [_redact_row(dict(row)) for row in cur.fetchall()]
+                fetched_rows = cur.fetchall()
+                result_limited = len(fetched_rows) > row_cap
+                rows = [_redact_row(dict(row)) for row in fetched_rows[:row_cap]]
                 columns = [description[0] for description in cur.description] if cur.description else []
+                _log(
+                    "sql_db_query completed "
+                    f"returned_rows={len(rows)} result_limited={result_limited} columns={columns}"
+                )
                 return json.dumps({
                     "columns": columns,
                     "row_count": len(rows),
                     "max_rows": MAX_RESULT_ROWS,
+                    "result_limited": result_limited,
+                    "warning": (
+                        "Result was capped by sql_db_query; do not compute totals from this partial result."
+                        if result_limited
+                        else ""
+                    ),
                     "rows": rows,
                 })
     except Exception as e:
+        _log(f"sql_db_query error={e}")
         return json.dumps({"error": str(e)})
 
 

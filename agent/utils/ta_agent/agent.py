@@ -4,6 +4,10 @@ from .graph import build_ta_graph
 from .tools import set_ta_auth_context
 
 
+def _log(message: str) -> None:
+    print(f"[ta_agent.chat] {message}", flush=True)
+
+
 def _build_history_messages(history: list | None):
     """Convert client history into internal chat messages.
 
@@ -46,6 +50,11 @@ def _build_history_messages(history: list | None):
 
 async def chat_with_ta(teacher_id: str, message: str, history: list = None, access_token: str = ""):
     """Run a single turn of the TA chatbot using the LangGraph agent."""
+    _log(
+        "start "
+        f"teacher_id={teacher_id} history_items={len(history or [])} "
+        f"message={message[:300]!r}"
+    )
     graph = build_ta_graph()
     set_ta_auth_context(access_token)
 
@@ -61,8 +70,11 @@ async def chat_with_ta(teacher_id: str, message: str, history: list = None, acce
 
     # Extract the final AI response
     final_messages = result.get("messages", [])
+    _log(f"graph completed messages={len(final_messages)}")
     for msg in reversed(final_messages):
         if isinstance(msg, AIMessage) and msg.content and not getattr(msg, "tool_calls", None):
+            _log(f"final response length={len(msg.content)} preview={msg.content[:300]!r}")
             return msg.content
 
+    _log("no final AI response found")
     return "I wasn't able to process that request. Could you try rephrasing?"
