@@ -115,14 +115,15 @@ export const syllabusPaths: Record<string, any> = {
       },
     },
   },
-  '/syllabus/{syllabusId}/graph': {
+  '/syllabus/graph': {
     get: {
       tags: ['Syllabus GraphRAG'],
       summary: 'Get the full entity-relationship graph for a syllabus',
-      description: 'Returns all extracted topics (nodes) and their relationships (edges) for visualization.',
+      description: 'Returns all extracted topics (nodes) and their relationships (edges) for visualization. Both syllabus_id and assignment_id are required.',
       security: [{ bearerAuth: [] }],
       parameters: [
-        { name: 'syllabusId', in: 'path', required: true, schema: { type: 'integer' } },
+        { name: 'syllabus_id', in: 'query', required: true, schema: { type: 'integer' }, description: 'The syllabus ID' },
+        { name: 'assignment_id', in: 'query', required: true, schema: { type: 'integer' }, description: 'The assignment ID' },
       ],
       responses: {
         '200': {
@@ -171,6 +172,7 @@ export const syllabusPaths: Record<string, any> = {
             },
           },
         },
+        '400': { description: 'Missing syllabus_id or assignment_id', content: { 'application/json': { schema: syllabusErrorSchema } } },
         '401': { description: 'Unauthorized', content: { 'application/json': { schema: syllabusErrorSchema } } },
         '500': { description: 'Failed to fetch graph', content: { 'application/json': { schema: syllabusErrorSchema } } },
       },
@@ -180,7 +182,7 @@ export const syllabusPaths: Record<string, any> = {
     post: {
       tags: ['Syllabus GraphRAG'],
       summary: 'Query the syllabus using natural language',
-      description: 'Performs vector search to find matching topics, retrieves graph relationships, and synthesizes an answer using LLM. Provide either syllabus_id or assignment_id to identify which syllabus to query.',
+      description: 'Performs vector search to find matching topics, retrieves graph relationships, and synthesizes an answer using LLM. Both syllabus_id and assignment_id are required.',
       security: [{ bearerAuth: [] }],
       requestBody: {
         required: true,
@@ -188,11 +190,11 @@ export const syllabusPaths: Record<string, any> = {
           'application/json': {
             schema: {
               type: 'object',
-              required: ['query'],
+              required: ['query', 'syllabus_id', 'assignment_id'],
               properties: {
                 query: { type: 'string', description: 'Natural language question about the syllabus' },
-                syllabus_id: { type: 'integer', description: 'The syllabus to query against (provide this OR assignment_id)', nullable: true },
-                assignment_id: { type: 'integer', description: 'The assignment whose syllabus to query (provide this OR syllabus_id)', nullable: true },
+                syllabus_id: { type: 'integer', description: 'The syllabus ID' },
+                assignment_id: { type: 'integer', description: 'The assignment ID' },
               },
             },
             example: {
@@ -263,7 +265,7 @@ export const syllabusPaths: Record<string, any> = {
             },
           },
         },
-        '400': { description: 'Missing query or both syllabus_id and assignment_id', content: { 'application/json': { schema: syllabusErrorSchema } } },
+        '400': { description: 'Missing query, syllabus_id, or assignment_id', content: { 'application/json': { schema: syllabusErrorSchema } } },
         '401': { description: 'Unauthorized', content: { 'application/json': { schema: syllabusErrorSchema } } },
         '404': { description: 'No completed syllabus found for the given assignment', content: { 'application/json': { schema: syllabusErrorSchema } } },
         '500': { description: 'Query failed', content: { 'application/json': { schema: syllabusErrorSchema } } },

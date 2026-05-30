@@ -82,14 +82,18 @@ export const getSyllabusStatus = async (req: Request, res: Response) => {
  */
 export const getSyllabusGraph = async (req: Request, res: Response) => {
   try {
-    const { syllabusId } = req.params;
+    const { syllabus_id, assignment_id } = req.query;
     const teacherId = req.authUser?.id;
 
     if (!teacherId) {
       return res.status(401).json({ error: 'Unauthorized: Missing teacher identity' });
     }
 
-    const response = await axios.get(`${FASTAPI_URL}/internal/agent/syllabus/${syllabusId}/graph`);
+    if (!syllabus_id || !assignment_id) {
+      return res.status(400).json({ error: 'Both syllabus_id and assignment_id query params are required' });
+    }
+
+    const response = await axios.get(`${FASTAPI_URL}/internal/agent/syllabus/${syllabus_id}/graph`);
 
     return res.status(200).json({
       message: 'Graph retrieved successfully',
@@ -117,14 +121,14 @@ export const querySyllabus = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Unauthorized: Missing teacher identity' });
     }
 
-    if (!query || (!syllabus_id && !assignment_id)) {
-      return res.status(400).json({ error: 'query and either syllabus_id or assignment_id are required' });
+    if (!query || !syllabus_id || !assignment_id) {
+      return res.status(400).json({ error: 'query, syllabus_id, and assignment_id are all required' });
     }
 
     const response = await axios.post(`${FASTAPI_URL}/internal/agent/syllabus/query`, {
       query,
-      ...(syllabus_id ? { syllabus_id: Number(syllabus_id) } : {}),
-      ...(assignment_id ? { assignment_id: Number(assignment_id) } : {}),
+      syllabus_id: Number(syllabus_id),
+      assignment_id: Number(assignment_id),
     });
 
     return res.status(200).json({

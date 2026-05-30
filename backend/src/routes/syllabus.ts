@@ -14,8 +14,8 @@ syllabusRouter.post('/syllabus/upload', upload.single('file'), uploadSyllabus);
 // Get syllabus ingestion status
 syllabusRouter.get('/syllabus/:syllabusId/status', getSyllabusStatus);
 
-// Get full graph for a syllabus
-syllabusRouter.get('/syllabus/:syllabusId/graph', getSyllabusGraph);
+// Get full graph for a syllabus (by syllabusId or assignmentId query param)
+syllabusRouter.get('/syllabus/graph', getSyllabusGraph);
 
 // Query the GraphRAG system
 syllabusRouter.post('/syllabus/query', querySyllabus);

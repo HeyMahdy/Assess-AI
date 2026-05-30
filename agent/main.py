@@ -505,6 +505,27 @@ async def get_syllabus_graph(syllabus_id: int):
         raise HTTPException(status_code=500, detail=f"{e.__class__.__name__}: {e}")
 
 
+@app.get("/internal/agent/syllabus/by-assignment/{assignment_id}")
+async def get_syllabus_by_assignment(assignment_id: int):
+    """Resolve syllabus_id from assignment_id."""
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id FROM public.syllabi WHERE assignment_id = %s",
+                    (assignment_id,)
+                )
+                row = cur.fetchone()
+                if not row:
+                    raise HTTPException(status_code=404, detail="No syllabus found for this assignment")
+                return {"syllabus_id": row["id"]}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"{e.__class__.__name__}: {e}")
+
+
 class QueryRequest(BaseModel):
     query: str
     syllabus_id: int = None
