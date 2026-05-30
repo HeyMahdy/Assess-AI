@@ -26,10 +26,9 @@ export const uploadSyllabus = async (req: Request, res: Response) => {
 
     const file = (req as any).file as any;
     const assignmentId = parsePathId(req.params['assignmentId']);
-    const syllabusId = parsePathId(req.params['syllabusId']);
 
-    if (!assignmentId || !syllabusId) {
-      return res.status(400).json({ error: 'Valid assignmentId and syllabusId path params are required' });
+    if (!assignmentId) {
+      return res.status(400).json({ error: 'Valid assignmentId path param is required' });
     }
 
     if (!file) {
@@ -40,7 +39,6 @@ export const uploadSyllabus = async (req: Request, res: Response) => {
     formData.append('file', file.buffer, file.originalname);
     formData.append('teacher_id', teacherId);
     formData.append('assignment_id', String(assignmentId));
-    formData.append('syllabus_id', String(syllabusId));
 
     const response = await axios.post(`${FASTAPI_URL}/internal/agent/syllabus/upload`, formData, {
       headers: { ...formData.getHeaders() },

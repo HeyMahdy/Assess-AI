@@ -8,15 +8,14 @@ const syllabusErrorSchema = {
 };
 
 export const syllabusPaths: Record<string, any> = {
-  '/assignments/{assignmentId}/syllabus/{syllabusId}/upload': {
+  '/assignments/{assignmentId}/syllabus/upload': {
     post: {
       tags: ['Syllabus GraphRAG'],
       summary: 'Upload a syllabus and trigger GraphRAG ingestion',
-      description: 'Accepts a PDF, DOCX, or TXT file scoped to a specific assignment. Extracts entities and relationships using AI, stores them with vector embeddings for semantic search. Re-uploading for the same assignment replaces the previous syllabus.',
+      description: 'Accepts a PDF, DOCX, or TXT file scoped to a specific assignment. The syllabus ID is generated after upload. Extracts entities and relationships using AI, stores them with vector embeddings for semantic search. Re-uploading for the same assignment replaces the previous syllabus.',
       security: [{ bearerAuth: [] }],
       parameters: [
         { name: 'assignmentId', in: 'path', required: true, schema: { type: 'integer' }, description: 'The assignment ID' },
-        { name: 'syllabusId', in: 'path', required: true, schema: { type: 'integer' }, description: 'The syllabus ID' },
       ],
       requestBody: {
         required: true,
@@ -68,7 +67,7 @@ export const syllabusPaths: Record<string, any> = {
             },
           },
         },
-        '400': { description: 'Invalid path params, no file uploaded, or text extraction failed', content: { 'application/json': { schema: syllabusErrorSchema } } },
+        '400': { description: 'Invalid assignmentId path param, no file uploaded, or text extraction failed', content: { 'application/json': { schema: syllabusErrorSchema } } },
         '401': { description: 'Unauthorized', content: { 'application/json': { schema: syllabusErrorSchema } } },
         '500': { description: 'Processing failed', content: { 'application/json': { schema: syllabusErrorSchema } } },
       },

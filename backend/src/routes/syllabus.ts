@@ -9,7 +9,7 @@ export const syllabusRouter = Router();
 syllabusRouter.use(requireAccessToken);
 
 // Upload syllabus and trigger GraphRAG pipeline
-syllabusRouter.post('/assignments/:assignmentId/syllabus/:syllabusId/upload', upload.single('file'), uploadSyllabus);
+syllabusRouter.post('/assignments/:assignmentId/syllabus/upload', upload.single('file'), uploadSyllabus);
 
 // Get syllabus ingestion status
 syllabusRouter.get('/syllabus/:syllabusId/status', getSyllabusStatus);
