@@ -197,6 +197,7 @@ export const syllabusPaths: Record<string, any> = {
             },
             example: {
               query: 'What do I need to learn before Dynamic Programming?',
+              syllabus_id: 1,
               assignment_id: 1,
             },
           },
