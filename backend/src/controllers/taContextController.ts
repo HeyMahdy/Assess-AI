@@ -21,6 +21,22 @@ type AssignmentCandidate = {
 };
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const assignmentNoiseWords = new Set([
+  'assignment',
+  'assignments',
+  'exam',
+  'exams',
+  'test',
+  'tests',
+  'quiz',
+  'quizzes',
+  'paper',
+  'assessment',
+  'assessments',
+  'homework',
+  'hw',
+  'the',
+]);
 
 function requireTeacherId(req: Request, res: Response) {
   const teacherId = req.authUser?.id;
@@ -33,6 +49,22 @@ function requireTeacherId(req: Request, res: Response) {
 
 function normalizeText(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function tokenizeAssignmentReference(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter((token) => token.length > 1 && !assignmentNoiseWords.has(token))
+    .slice(0, 8);
+}
+
+function assignmentTokenAlternatives(token: string) {
+  if (token === 'midterm') return ['midterm', 'mid', 'term'];
+  if (token === 'finals') return ['finals', 'final'];
+  return [token];
 }
 
 function toIso(value: unknown) {
@@ -195,7 +227,34 @@ async function resolveAssignmentCandidates(teacherId: string, ref: string) {
     `,
     [teacherId, `%${trimmed}%`, `${trimmed}%`],
   );
-  return partialResult.rows.map(mapAssignment);
+  if (partialResult.rows.length > 0) return partialResult.rows.map(mapAssignment);
+
+  const tokens = tokenizeAssignmentReference(trimmed);
+  if (tokens.length === 0) return [];
+
+  const tokenValues: string[] = [];
+  const tokenFilters = tokens.map((token) => {
+    const alternatives = assignmentTokenAlternatives(token);
+    const filters = alternatives.map((alternative) => {
+      tokenValues.push(`%${alternative}%`);
+      const param = `$${tokenValues.length + 1}`;
+      return `title ILIKE ${param} OR subject ILIKE ${param}`;
+    });
+    return `(${filters.join(' OR ')})`;
+  });
+  const tokenResult = await pool.query(
+    `
+      SELECT id as assignment_id, title, subject, total_marks, created_at
+      FROM public.assignments
+      WHERE teacher_id = $1
+        AND ${tokenFilters.join(' AND ')}
+      ORDER BY created_at DESC, id DESC
+      LIMIT 5;
+    `,
+    [teacherId, ...tokenValues],
+  );
+
+  return tokenResult.rows.map(mapAssignment);
 }
 
 function resolutionResult<T>(query: string, candidates: T[]) {
