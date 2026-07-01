@@ -15,6 +15,9 @@ class AssignmentState(TypedDict):
     rubric_description: Optional[str]
     student_answer: Optional[str]
     teacher_solution: Optional[str]
+    existing_marks: Optional[float]
+    existing_confidence_score: Optional[float]
+    existing_ai_comment: Optional[str]
 
     # AI Outputs
     grader_1_result: Optional[dict]

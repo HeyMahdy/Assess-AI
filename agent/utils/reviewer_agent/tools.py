@@ -45,7 +45,10 @@ def fetch_evaluation_context(teacher_id: str, student_id: str, assignment_id: in
             sa.answer,
             q.question_description,
             r.rubric_description,
-            COALESCE(ts.solution_text, '') AS teacher_solution
+            COALESCE(ts.solution_text, '') AS teacher_solution,
+            sqs.marks AS existing_marks,
+            sqs.confidence_score AS existing_confidence_score,
+            COALESCE(sqs.ai_comment, '') AS existing_ai_comment
         FROM public.student_answers sa
         JOIN public.questions q 
             ON sa.assignment_id = q.assignment_id 
@@ -59,6 +62,12 @@ def fetch_evaluation_context(teacher_id: str, student_id: str, assignment_id: in
             ON sa.assignment_id = ts.assignment_id 
             AND sa.question_label = ts.question_label
             AND sa.teacher_id = ts.teacher_id
+        LEFT JOIN public.student_question_scores sqs
+            ON sa.assignment_id = sqs.assignment_id
+            AND sa.question_label = sqs.question_label
+            AND sa.teacher_id = sqs.teacher_id
+            AND sa.student_id = sqs.student_id
+            AND sa.answer = sqs.student_solution
         WHERE sa.teacher_id = %s 
             AND sa.student_id = %s 
             AND sa.assignment_id = %s 
@@ -77,6 +86,9 @@ def fetch_evaluation_context(teacher_id: str, student_id: str, assignment_id: in
                     "rubric_description": row['rubric_description'],
                     "student_answer": row['answer'],
                     "teacher_solution": row['teacher_solution'],
+                    "existing_marks": float(row['existing_marks']) if row['existing_marks'] is not None else None,
+                    "existing_confidence_score": float(row['existing_confidence_score']) if row['existing_confidence_score'] is not None else None,
+                    "existing_ai_comment": row['existing_ai_comment'] or "",
                 })
     except Exception as e:
         return json.dumps({"error": f"Database error: {str(e)}"})
